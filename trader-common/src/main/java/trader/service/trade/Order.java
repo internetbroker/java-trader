@@ -13,12 +13,27 @@ import trader.common.exchangeable.Exchangeable;
  */
 public interface Order extends TradeConstants {
 
-    public static final String ATTR_SYS_ID = "sysId";
-    public static final String ATTR_STATUS = "status";
-    public static final String ATTR_SESSION_ID = "sessionId";
-    public static final String ATTR_FRONT_ID = "frontId";
+    public static final String ODRATR_CTP_SYS_ID = "ctpSysId";
+    public static final String ODRATR_CTP_STATUS = "ctpStatus";
+    public static final String ODRATR_CTP_SESSION_ID = "ctpSessionId";
+    public static final String ODRATR_CTP_FRONT_ID = "ctpFrontId";
 
-    public Exchangeable getExchangeable();
+    /**
+     * 用于关联Order与Playbook的属性
+     */
+    public static final String ODRATTR_PLAYBOOK_ID = "pbId";
+
+    /**
+     * 关联的TradletGroupId
+     */
+    public static final String ODRATTR_TRADLET_GROUP_ID = "pbTradletGroupId";
+
+    /**
+     * 用于关联Order与Playbook的某个具体动作ID
+     */
+    public static final String ODRATTR_PLAYBOOK_ACTION_ID = "pbActionId";
+
+    public Exchangeable getInstrument();
 
     public OrderListener getListener();
 
@@ -32,6 +47,14 @@ public interface Order extends TradeConstants {
      */
     public List<OrderStateTuple> getStateTuples();
 
+    /**
+     * 节点唯一的ID, 可用于隔夜定位报单
+     */
+    public String getId();
+
+    /**
+     * 本地REF
+     */
     public String getRef();
 
     /**
@@ -59,15 +82,8 @@ public interface Order extends TradeConstants {
     /**
      * 返回报单资金项
      *
-     * @see TradeConstants#OdrMoney_PriceCandidate
-     * @see TradeConstants#OdrMoney_LocalUsedMargin
-     * @see TradeConstants#OdrMoney_LocalFrozenMargin
-     * @see TradeConstants#OdrMoney_LocalUnFrozenMargin
-     * @see TradeConstants#OdrMoney_LocalUsedCommission
-     * @see TradeConstants#OdrMoney_LocalFrozenCommission
-     * @see TradeConstants#OdrMoney_LocalUnfrozenCommission
      */
-    public long getMoney(int index);
+    public long getMoney(OdrMoney mny);
 
     /**
      * 返回报单资金项
@@ -76,15 +92,8 @@ public interface Order extends TradeConstants {
 
     /**
      * 返回报单仓位项
-     *
-     * @see TradeConstants#OdrVolume_LongFrozen
-     * @see TradeConstants#OdrVolume_ShortFrozen
-     * @see TradeConstants#OdrVolume_LongUnfrozen
-     * @see TradeConstants#OdrVolume_ShortUnfrozen
-     * @see TradeConstants#OdrVolume_TradeVolume
-     * @see TradeConstants#OdrVolume_ReqVolume
      */
-    public int getVolume(int index);
+    public int getVolume(OdrVolume vol);
 
     public Position getPosition();
 

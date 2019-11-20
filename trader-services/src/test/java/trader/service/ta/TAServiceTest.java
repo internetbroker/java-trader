@@ -3,11 +3,11 @@ package trader.service.ta;
 import static org.junit.Assert.assertTrue;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.Month;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.junit.Before;
 import org.junit.Test;
 import org.ta4j.core.Bar;
 import org.ta4j.core.TimeSeries;
@@ -15,14 +15,16 @@ import org.ta4j.core.indicators.EMAIndicator;
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator;
 
 import trader.common.exchangeable.Exchangeable;
+import trader.common.exchangeable.ExchangeableTradingTimes;
 import trader.common.tick.PriceLevel;
 import trader.common.util.PriceUtil;
+import trader.common.util.StringUtil;
 import trader.service.TraderHomeHelper;
 import trader.service.md.MarketData;
 import trader.service.md.MarketDataListener;
 import trader.service.md.MarketDataService;
 import trader.service.trade.MarketTimeService;
-import trader.simulator.SimBeansContainer;
+import trader.service.util.SimpleBeansContainer;
 import trader.simulator.SimMarketDataService;
 import trader.simulator.SimMarketTimeService;
 
@@ -31,46 +33,59 @@ import trader.simulator.SimMarketTimeService;
  */
 public class TAServiceTest {
 
-    @Before
-    public void setup() {
-        TraderHomeHelper.init();
+    static {
+        TraderHomeHelper.init(null);
     }
 
+    @Test
+    public void testSubscriptions() {
+        String filter = "   fu ; ru, au\n\tag";
+        String[] strs = StringUtil.split(filter, ",|;|\\s");
+        assertTrue(strs.length==4);
+    }
 
     @Test
     public void ru1901_MACD() throws Exception
     {
         LocalDate tradingDay = LocalDate.of(2018,  Month.DECEMBER, 3);
-        LocalDateTime beginTime = LocalDateTime.of(2018, Month.DECEMBER, 3, 8, 50);
-        LocalDateTime endTime = LocalDateTime.of(2018, Month.DECEMBER, 3, 15, 04);
         Exchangeable ru1901 = Exchangeable.fromString("ru1901");
-        final SimBeansContainer beansContainer = new SimBeansContainer();
+        final SimpleBeansContainer beansContainer = new SimpleBeansContainer();
         final SimMarketTimeService marketTime = new SimMarketTimeService();
         final SimMarketDataService mdService = new SimMarketDataService();
         final MyMACDListener myTAListener = new MyMACDListener();
-        marketTime.setTimeRange(tradingDay, beginTime, endTime);
+        ExchangeableTradingTimes tradingTimes = ru1901.exchange().getTradingTimes(ru1901, tradingDay);
+        marketTime.setTimeRanges(tradingDay, tradingTimes.getMarketTimes() );
 
         beansContainer.addBean(MarketTimeService.class, marketTime);
         beansContainer.addBean(MarketDataService.class, mdService);
 
         mdService.addSubscriptions(Arrays.asList(new Exchangeable[] {ru1901}));
         mdService.init(beansContainer);
-        TAServiceImpl taService = new TAServiceImpl();
+        TechnicalAnalysisServiceImpl taService = new TechnicalAnalysisServiceImpl();
+        Map<String, String> config = new HashMap<>();
+        config.put("strokeThreshold", "1");
+        config.put("lineWidth", "1");
+        taService.addInstrumentDef(new InstrumentDef(Exchangeable.fromString("au.shfe"), config));
+
+        config = new HashMap<>();
+        config.put("strokeThreshold", "10");
+        config.put("lineWidth", "10");
+        taService.addInstrumentDef(new InstrumentDef(Exchangeable.fromString("ru.shfe"), config));
         taService.init(beansContainer);
-        taService.addListener(myTAListener);
+        taService.registerListener(Arrays.asList(ru1901), myTAListener);
         mdService.addListener(myTAListener, ru1901);
         //时间片段循环
         while(marketTime.nextTimePiece());
         MarketData lastTick = mdService.getLastData(ru1901);
-        TimeSeries min1Series = taService.getSeries(ru1901, PriceLevel.MIN1);
+        TechnicalAnalysisAccess item = taService.forInstrument(ru1901);
+        TimeSeries min1Series = item.getSeries(PriceLevel.MIN1);
         Bar lastMin1Bar= min1Series.getLastBar();
         assertTrue(lastMin1Bar.getBeginTime().toLocalDateTime().getMinute()==59);
         assertTrue(lastMin1Bar.getEndTime().toLocalDateTime().equals(lastTick.updateTime));
-        assertTrue(marketTime.getMarketTime().equals(endTime));
 
-        TimeSeries min3Series = taService.getSeries(ru1901, PriceLevel.MIN3);
-        Bar lastMin3Bar = min3Series.getLastBar();
-        assertTrue(lastMin3Bar.getEndTime().toLocalDateTime().getMinute()==0);
+        TimeSeries min5Series = item.getSeries(PriceLevel.MIN5);
+        Bar lastMin5Bar = min5Series.getLastBar();
+        //assertTrue(lastMin3Bar.getEndTime().toLocalDateTime().getMinute()==0);
     }
 
 }
@@ -79,7 +94,7 @@ public class TAServiceTest {
 /**
  * 测试MACD计算
  */
-class MyMACDListener implements TAListener, MarketDataListener {
+class MyMACDListener implements TechnicalAnalysisListener, MarketDataListener {
     LeveledTimeSeries min1Series = null;
     org.ta4j.core.indicators.MACDIndicator diffIndicator;
     EMAIndicator deaIndicator;

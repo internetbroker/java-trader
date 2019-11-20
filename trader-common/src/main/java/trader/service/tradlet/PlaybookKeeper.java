@@ -7,12 +7,14 @@ import trader.common.exception.AppException;
 import trader.service.trade.Order;
 
 /**
- * Playbook以及关联的报单, 成交的管理接口
+ * Playbook以及关联的报单, 成交的管理接口.
+ * <BR>每个TradletGroup有自己独立的PlaybookKeeper实例.
  */
 public interface PlaybookKeeper {
 
     /**
-     * 返回属于这个分组的所有报单
+     * 返回属于这个分组的所有报单.
+     * <p>只返回报单当天报单, 历史报单不返回
      */
     public List<Order> getAllOrders();
 
@@ -42,10 +44,11 @@ public interface PlaybookKeeper {
     public Collection<Playbook> getAllPlaybooks();
 
     /**
-     * 返回活动的交易剧本
-     * @param tradletId tradlet Id, null代表返回所有活动playbook
+     * 返回活动的交易剧本列表
+     *
+     * @param query expr 查询语句, cqengine语法
      */
-    public Collection<Playbook> getActivePlaybooks(String tradletId);
+    public List<Playbook> getActivePlaybooks(String queryExpr);
 
     /**
      * 返回指定Playbook
@@ -54,12 +57,15 @@ public interface PlaybookKeeper {
 
     /**
      * 异步创建一个新的Playbook, 当前如果有活跃的Playbook, 会先强制关闭
+     * @param tradlet TODO
      */
-    public void createPlaybook(PlaybookBuilder builder) throws AppException;
+    public Playbook createPlaybook(Tradlet tradlet, PlaybookBuilder builder) throws AppException;
 
     /**
      * 明确关闭一个Playbook, 平掉所有持仓.
      * <BR>只有处于Opening/Open状态的Playbook才能平仓
+     *
+     * @return true 平仓请求成功, false 状态不对或不需要实际动作
      */
     public boolean closePlaybook(Playbook playbook, PlaybookCloseReq closeReq);
 

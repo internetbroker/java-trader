@@ -3,8 +3,8 @@ package trader.common.exchangeable;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.WeekFields;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +13,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import trader.common.exchangeable.Exchange.MarketType;
+import trader.common.util.ConversionUtil;
 import trader.common.util.DateUtil;
 import trader.common.util.IOUtil;
 import trader.common.util.StringUtil;
@@ -23,16 +23,35 @@ import trader.common.util.StringUtil;
  */
 public class ExchangeContract {
 
-    public static class TimeStage {
-        MarketType marketType;
-        LocalTime[] timeFrames;
+    /**
+     * 代表一个日市/夜市时间段. 之前5分钟有集合竞价
+     */
+    public static class MarketTimeSegment{
+        public boolean lastTradingDay;
+        public LocalTime[] timeFrames;
+        public MarketType marketType;
+    }
+
+    /**
+     * 代表一个交易时间定义, 同一个品种. 会存在多个MarketTimeRecord. 用于描述交易所调整交易时间规定的修订记录,
+     */
+    public static class MarketTimeRecord {
+        /**
+         * 有效期-开始日期
+         */
         LocalDate beginDate;
+        /**
+         * 有效期-结束日期
+         */
         LocalDate endDate;
-        public MarketType getMarketType() {
-            return marketType;
-        }
-        public LocalTime[] getTimeFrames() {
-            return timeFrames;
+
+        /**
+         * 日市夜市的交易时间
+         */
+        MarketTimeSegment[] timeStages;
+
+        public MarketTimeSegment[] getTimeStages() {
+            return timeStages;
         }
         public LocalDate getBeginDate() {
             return beginDate;
@@ -41,6 +60,8 @@ public class ExchangeContract {
             return endDate;
         }
     }
+
+    private String[] commodities;
 
     private String[] instruments;
 
@@ -53,9 +74,32 @@ public class ExchangeContract {
     private int lastTradingWeekOfMonth;
 
     /**
-     * 每天交易时间段
+     * 交易时间段
      */
-    private TimeStage[] timeStages;
+    private MarketTimeRecord[] marketTimeRecords;
+
+    private double priceTick = 0.01;
+
+    private int volumeMultiplier = 1;
+
+    public double getPriceTick() {
+        return priceTick;
+    }
+
+    public int getVolumeMultiplier() {
+        return volumeMultiplier;
+    }
+
+    public MarketTimeRecord[] getMarketTimeRecords() {
+        return marketTimeRecords;
+    }
+
+    /**
+     * 合约名
+     */
+    public String[] getCommodities() {
+        return commodities;
+    }
 
     /**
      * 合约的实例时间标志:
@@ -72,8 +116,14 @@ public class ExchangeContract {
     /**
      * 交易时间段
      */
-    public TimeStage[] getTimeStages() {
-        return timeStages;
+    public MarketTimeRecord matchMarketTimeRecords(LocalDate tradingDay) {
+        for(int i=0;i<marketTimeRecords.length;i++) {
+            MarketTimeRecord record = marketTimeRecords[i];
+            if ( record.beginDate.compareTo(tradingDay)<=0 && record.endDate.compareTo(tradingDay)>=0 ) {
+                return marketTimeRecords[i];
+            }
+        }
+        return null;
     }
 
     public DayOfWeek getLastTradingDayOfWeek() {
@@ -88,45 +138,45 @@ public class ExchangeContract {
         return lastTradingWeekOfMonth;
     }
 
-    public static Map<String, ExchangeContract> getContracts() {
-        return contracts;
+    public boolean isAfterLastTradingDay(LocalDate tradingDay) {
+        boolean result = false;
+        if ( getLastTradingDayOfMonth()>0 && tradingDay.getDayOfMonth()>=getLastTradingDayOfMonth() ) {
+            result = true;
+        }
+        DayOfWeek dayOfWeek = tradingDay.getDayOfWeek();
+        int weekOfMonth = tradingDay.get(WeekFields.of(DayOfWeek.SUNDAY, 2).weekOfMonth());
+        if (getLastTradingWeekOfMonth() > 0 &&
+                (weekOfMonth > getLastTradingWeekOfMonth()
+                        || (weekOfMonth == getLastTradingWeekOfMonth() && dayOfWeek.getValue() > getLastTradingDayOfWeek().getValue()))
+           )
+        {
+            result = true;
+        }
+        return result;
+    }
+
+
+    public static List<ExchangeContract> getContracts(String exchange) {
+        if ( StringUtil.isEmpty(exchange)) {
+            return new ArrayList<>(contracts.values());
+        }
+        List<ExchangeContract> result = new ArrayList<>();
+        for(String key:contracts.keySet()) {
+            if ( key.toUpperCase().endsWith("."+exchange.toUpperCase())) {
+                result.add(contracts.get(key));
+            }
+        }
+        return result;
     }
 
     public static Exchange detectContract(String commodity) {
         for(String key:contracts.keySet()) {
-            if ( key.toUpperCase().endsWith("."+commodity.toUpperCase())) {
-                String exchangeName = key.substring(0, key.length()-commodity.length()-1);
+            if ( key.toUpperCase().startsWith(commodity.toUpperCase()+".")) {
+                String exchangeName = key.substring(commodity.length()+1);
                 return Exchange.getInstance(exchangeName);
             }
         }
         return null;
-    }
-
-    /**
-     * 规范交易所品种大小写
-     */
-    public static String detectCommodity(Exchange exchange, String commodity) {
-        for(String key:contracts.keySet()) {
-            if ( StringUtil.equalsIgnoreCase(key, exchange.name()+"."+commodity.toUpperCase())) {
-                int dotIndex = key.indexOf('.');
-                return key.substring(dotIndex+1);
-            }
-        }
-        return commodity;
-    }
-
-    /**
-     * 返回交易所的合约列表
-     */
-    public static List<String> getContractNames(Exchange exchange){
-        List<String> result = new ArrayList<>();
-        String prefix = exchange.name()+".";
-        for(String key:contracts.keySet()) {
-            if ( key.startsWith(prefix) ) {
-                result.add(key.substring(prefix.length()));
-            }
-        }
-        return result;
     }
 
     private static final Map<String, ExchangeContract> contracts = new HashMap<>();
@@ -146,79 +196,70 @@ public class ExchangeContract {
             JsonObject json = (JsonObject)jsonArray.get(i);
             String exchange = json.get("exchange").getAsString();
             String commodities[] = json2stringArray( (JsonArray)json.get("commodity") );
-
             ExchangeContract contract = new ExchangeContract();
+            contract.commodities = commodities;
             if ( json.has("instruments") ) {
                 contract.instruments = json2stringArray((JsonArray)json.get("instruments"));
             }
             if ( json.has("instrumentFormat")) {
                 contract.instrumentFormat = json.get("instrumentFormat").getAsString();
             }
+            if ( json.has("priceTick")) {
+                contract.priceTick = json.get("priceTick").getAsDouble();
+            }
+            if ( json.has("volumeMultiplier")) {
+                contract.volumeMultiplier = (int)json.get("volumeMultiplier").getAsDouble();
+            }
             if ( json.has("lastTradingDay")) {
 
                 String lastTradingDay = json.get("lastTradingDay").getAsString();
                 if ( lastTradingDay.indexOf(".")>0){
-                    contract.lastTradingWeekOfMonth = Integer.parseInt( lastTradingDay.substring(0, lastTradingDay.indexOf('.')).trim() );
+                    contract.lastTradingWeekOfMonth = ConversionUtil.toInt( lastTradingDay.substring(0, lastTradingDay.indexOf('.')).trim() );
                     int dayOfWeek = Integer.parseInt( lastTradingDay.substring(lastTradingDay.indexOf('.')+1).trim() );
                     contract.lastTradingDayOfWeek = DayOfWeek.values()[dayOfWeek-1];
                 }else{
-                    contract.lastTradingDayOfMonth = Integer.parseInt(lastTradingDay.trim());
+                    contract.lastTradingDayOfMonth = ConversionUtil.toInt(lastTradingDay);
                 }
             }
-            List<TimeStage> marketTimes = new ArrayList<>();
+            List<MarketTimeRecord> marketTimes = new ArrayList<>();
             JsonArray marketTimesArray = (JsonArray)json.get("marketTimes");
             for(int j=0;j<marketTimesArray.size();j++) {
                 JsonObject marketTimeInfo = (JsonObject)marketTimesArray.get(j);
-                TimeStage timeStage = new TimeStage();
-                timeStage.marketType = MarketType.valueOf(marketTimeInfo.get("marketType").getAsString());
-                timeStage.beginDate = DateUtil.str2localdate(marketTimeInfo.get("beginDate").getAsString());
-                timeStage.endDate = DateUtil.str2localdate(marketTimeInfo.get("endDate").getAsString());
+                MarketTimeRecord timeRecord = new MarketTimeRecord();
+                timeRecord.beginDate = DateUtil.str2localdate(marketTimeInfo.get("beginDate").getAsString());
+                timeRecord.endDate = DateUtil.str2localdate(marketTimeInfo.get("endDate").getAsString());
                 JsonArray timeFramesArray = (JsonArray)marketTimeInfo.get("timeFrames");
-                timeStage.timeFrames = new LocalTime[ timeFramesArray.size()*2 ];
+                timeRecord.timeStages = new MarketTimeSegment[ timeFramesArray.size()];
                 for(int k=0;k<timeFramesArray.size();k++) {
-                    String timeFrame = timeFramesArray.get(k).getAsString();
-                    String fp[] = StringUtil.split(timeFrame, "-");
-                    timeStage.timeFrames[k*2] = DateUtil.str2localtime(fp[0]);
-                    timeStage.timeFrames[k*2+1] = DateUtil.str2localtime(fp[1]);
-                    if ( timeStage.timeFrames[k*2]==null || timeStage.timeFrames[k*2+1]==null ) {
-                        System.out.println("Contract "+Arrays.asList(contract.instruments)+" time stage is invalid: "+timeFrame);
+                    String stageFrameStr = timeFramesArray.get(k).getAsString();
+                    MarketTimeSegment stage = new MarketTimeSegment();
+                    if ( stageFrameStr.startsWith("LTD:")) {
+                        stageFrameStr = stageFrameStr.substring(4);
+                        stage.lastTradingDay = true;
+                        stage.marketType = MarketType.Night;
+                    } else {
+                        stage.marketType = MarketType.Day;
                     }
+                    String stageFrames[] = StringUtil.split(stageFrameStr, ",|;");
+                    stage.timeFrames = new LocalTime[stageFrames.length*2];
+                    for(int l=0;l<stageFrames.length;l++) {
+                        String frameTimes[] = StringUtil.split(stageFrames[l], "-");
+                        stage.timeFrames[l*2] = DateUtil.str2localtime(frameTimes[0]);
+                        stage.timeFrames[l*2+1] = DateUtil.str2localtime(frameTimes[1]);
+                    }
+                    timeRecord.timeStages[k] = stage;
                 }
-                marketTimes.add(timeStage);
+                marketTimes.add(timeRecord);
             }
-            contract.timeStages = marketTimes.toArray(new TimeStage[marketTimes.size()]);
+            contract.marketTimeRecords = marketTimes.toArray(new MarketTimeRecord[marketTimes.size()]);
 
             for(String commodity:commodities) {
-                Object lastValue = contracts.put(exchange+"."+commodity, contract);
+                Object lastValue = contracts.put(commodity.toUpperCase()+"."+exchange, contract);
                 if ( lastValue!=null ) {
                     throw new RuntimeException("重复定义的合约 "+exchange+"."+commodity);
                 }
             }
         }
-    }
-
-    static ExchangeContract matchContract(Exchange exchange, String instrument) {
-        //证券交易所, 找 sse.* 这种
-        if ( exchange.isSecurity() ) {
-            return contracts.get(exchange.name().toLowerCase()+".*");
-        }
-        //期货交易所, 找 cffex.TF1810, 找cffex.TF, 再找 cffex.*
-        ExchangeContract contract = contracts.get(exchange.name()+"."+instrument);
-        if ( contract==null ) {
-            StringBuilder commodity = new StringBuilder(10);
-            for(int i=0;i<instrument.length();i++) {
-                char ch = instrument.charAt(i);
-                if ( ch>='0' && ch<='9' ) {
-                    break;
-                }
-                commodity.append(ch);
-            }
-            contract = contracts.get(exchange.name()+"."+commodity);
-        }
-        if ( contract==null ) {
-            contract = contracts.get(exchange.name()+".*");
-        }
-        return contract;
     }
 
     private static String[] json2stringArray(JsonArray jsonArray)

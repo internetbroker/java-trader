@@ -24,6 +24,7 @@ import trader.common.beans.BeansContainer;
 import trader.common.beans.ServiceState;
 import trader.common.config.ConfigUtil;
 import trader.common.util.ConversionUtil;
+import trader.common.util.TimestampSeqGen;
 import trader.service.event.AsyncEvent;
 import trader.service.event.AsyncEventFilter;
 import trader.service.event.AsyncEventService;
@@ -49,6 +50,9 @@ public class TradeServiceImpl implements TradeService, AsyncEventFilter {
     private ScheduledExecutorService scheduledExecutorService;
 
     @Autowired
+    private MarketTimeService mtService;
+
+    @Autowired
     private MarketDataService mdService;
 
     @Autowired
@@ -64,6 +68,8 @@ public class TradeServiceImpl implements TradeService, AsyncEventFilter {
 
     private ServiceState state = ServiceState.Unknown;
 
+    private TimestampSeqGen orderIdGen;
+
     private OrderRefGenImpl orderRefGen;
 
     private List<AccountImpl> accounts = new ArrayList<>();
@@ -74,6 +80,7 @@ public class TradeServiceImpl implements TradeService, AsyncEventFilter {
     public void init(BeansContainer beansContainer) {
         state = ServiceState.Starting;
         orderRefGen = new OrderRefGenImpl(beansContainer);
+        orderIdGen = new TimestampSeqGen(mtService);
         //接收行情, 异步更新账户的持仓盈亏
         mdService.addListener((MarketData md)->{
             accountOnMarketData(md);
@@ -111,7 +118,10 @@ public class TradeServiceImpl implements TradeService, AsyncEventFilter {
         });
     }
 
-    @Override
+    public TimestampSeqGen getOrderIdGen() {
+        return orderIdGen;
+    }
+
     public OrderRefGen getOrderRefGen() {
         return orderRefGen;
     }
@@ -159,19 +169,19 @@ public class TradeServiceImpl implements TradeService, AsyncEventFilter {
      */
     private List<AccountImpl> reloadAccounts() {
         long t0 = System.currentTimeMillis();
-        var currAccounts = accounts;
-        var currAccountByIds = new HashMap<String, AccountImpl>();
+        List<AccountImpl> currAccounts = accounts;
+        Map<String, AccountImpl> currAccountByIds = new HashMap<>();
         for(AccountImpl account:currAccounts) {
             currAccountByIds.put(account.getId(), account);
         }
-        var updatedAccounts = new ArrayList<AccountImpl>();
-        var updatedAccountIds = new ArrayList<String>();
-        var allAccounts = new ArrayList<AccountImpl>();
-        var accountElems = (List<Map>)ConfigUtil.getObject(ITEM_ACCOUNTS);
+        List<AccountImpl> updatedAccounts = new ArrayList<>();
+        List<String> updatedAccountIds = new ArrayList<>();
+        List<AccountImpl> allAccounts = new ArrayList<>();
+        List<Map> accountElems = (List<Map>)ConfigUtil.getObject(ITEM_ACCOUNTS);
         if ( accountElems!=null ) {
             for (Map accountElem:accountElems) {
                 String id = ConversionUtil.toString(accountElem.get("id"));
-                var currAccount = currAccountByIds.get(id);
+                AccountImpl currAccount = currAccountByIds.get(id);
                 try{
                     if ( null==currAccount ) {
                         currAccount = createAccount(accountElem);

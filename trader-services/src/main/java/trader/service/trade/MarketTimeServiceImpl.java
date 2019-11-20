@@ -2,27 +2,33 @@ package trader.service.trade;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.concurrent.ScheduledExecutorService;
 
 import javax.annotation.PostConstruct;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import trader.common.exchangeable.Exchange;
+import trader.common.exchangeable.ExchangeableTradingTimes;
 
 /**
  * 交易时间服务
  */
 @Service
 public class MarketTimeServiceImpl implements MarketTimeService {
-    private final static Logger logger = LoggerFactory.getLogger(MarketTimeServiceImpl.class);
 
-    @Autowired
-    private ScheduledExecutorService scheduledExecutorService;
+    private LocalDate tradingDay;
 
     @PostConstruct
     public void init() {
+        ExchangeableTradingTimes tradingTimes = Exchange.SHFE.detectTradingTimes("au", LocalDateTime.now());
+        if ( tradingTimes!=null ) {
+            tradingDay = tradingTimes.getTradingDay();
+        }
+    }
+
+    @Override
+    public long currentTimeMillis() {
+        return System.currentTimeMillis();
     }
 
     /**
@@ -37,8 +43,8 @@ public class MarketTimeServiceImpl implements MarketTimeService {
      * 返回市场当天时间
      */
     @Override
-    public LocalDate getMarketDay() {
-        return LocalDate.now();
+    public LocalDate getTradingDay() {
+        return tradingDay;
     }
 
 }

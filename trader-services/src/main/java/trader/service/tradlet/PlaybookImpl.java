@@ -1,25 +1,28 @@
 package trader.service.tradlet;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import trader.common.beans.BeansContainer;
 import trader.common.exception.AppException;
+import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.Exchangeable;
-import trader.common.util.ConversionUtil;
 import trader.common.util.JsonEnabled;
 import trader.common.util.JsonUtil;
 import trader.common.util.StringUtil;
 import trader.service.md.MarketData;
 import trader.service.md.MarketDataService;
 import trader.service.trade.Account;
+import trader.service.trade.MarketTimeService;
 import trader.service.trade.Order;
 import trader.service.trade.OrderBuilder;
 import trader.service.trade.Position;
@@ -31,6 +34,7 @@ import trader.service.trade.TradeConstants.OrderPriceType;
 import trader.service.trade.TradeConstants.OrderState;
 import trader.service.trade.TradeConstants.OrderSubmitState;
 import trader.service.trade.TradeConstants.PosDirection;
+import trader.service.trade.TradeConstants.PosVolume;
 import trader.service.trade.Transaction;
 
 /**
@@ -39,13 +43,13 @@ import trader.service.trade.Transaction;
 public class PlaybookImpl implements Playbook, JsonEnabled {
     private static final Logger logger = LoggerFactory.getLogger(PlaybookImpl.class);
 
-    private Exchangeable e;
+    private TradletGroupImpl group;
+    private Exchangeable instrument;
     private String id;
-    private String templateId;
-    private String policyIds[];
     private int volumes[];
     private long money[];
-    private Properties attrs = new Properties();
+    private Map<String, Object> attrs = new HashMap<>();
+    private volatile int attrVersion;
     private PosDirection direction = PosDirection.Net;
     private List<Order> orders = new ArrayList<>();
     /**
@@ -53,38 +57,28 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
      */
     private Order pendingOrder;
 
-    private Order newStateOrder;
-
     private List<PlaybookStateTuple> stateTuples = new ArrayList<>();
     private PlaybookStateTuple stateTuple;
-    private int openTimeout = DEFAULT_OPEN_TIMEOUT;
-    private int closeTimeout = DEFAULT_CLOSE_TIMEOUT;
 
-    public PlaybookImpl(String id, PlaybookBuilder builder, PlaybookStateTuple openState) {
+    public PlaybookImpl(TradletGroupImpl group, String id, PlaybookBuilder builder, PlaybookStateTuple openState) {
+        this.group = group;
         this.id = id;
         this.stateTuple = openState;
         if ( openState.getOrder()!=null ) {
             orders.add(openState.getOrder());
             pendingOrder = openState.getOrder();
-            e = openState.getOrder().getExchangeable();
+            instrument = openState.getOrder().getInstrument();
         }
         stateTuples.add(openState);
-        templateId = builder.getTemplateId();
         direction = builder.getOpenDirection();
-        volumes = new int[PBVol_Count];
-        money = new long[PBMny_Count];
-        volumes[PBVol_Openning] = builder.getVolume();
-        money[PBMny_Opening] = builder.getOpenPrice();
+        volumes = new int[PBVol.values().length];
+        money = new long[PBMoney.values().length];
+        setVolume(PBVol.Opening, builder.getVolume());
+        setMoney(PBMoney.Opening, builder.getOpenPrice());
         //解析参数
-        Properties attrs = builder.getAttrs();
-        for(Object key0:attrs.keySet()) {
-            String key = key0.toString();
-            String val = attrs.getProperty(key);
-            setAttr(key, val);
-        }
-        policyIds = new String[PBPolicy_Count];
-        if ( !StringUtil.isEmpty(builder.getPolicyId()) ) {
-            policyIds[PBPolicy_Open] = builder.getPolicyId();
+        Map<String, Object> attrs = builder.getAttrs();
+        for(String key:attrs.keySet()) {
+            setAttr(key, attrs.get(key));
         }
     }
 
@@ -94,20 +88,8 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
     }
 
     @Override
-    public String getTemplateId() {
-        return templateId;
-    }
-
-    @Override
-    public String getPolicyId(int purposeIdx) {
-        return policyIds[purposeIdx];
-    }
-
-    @Override
-    public void setPolicyId(int purposeIdx, String policyId) {
-        if ( policyIds[purposeIdx]!=null) {
-            policyIds[purposeIdx] = policyId;
-        }
+    public Exchangeable getInstrument() {
+        return instrument;
     }
 
     @Override
@@ -120,35 +102,63 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
         return stateTuple;
     }
 
-    @Override
-    public String getAttr(String attr) {
-        return attrs.getProperty(attr);
-    }
-
-    @Override
-    public void setAttr(String attr, String value) {
-        if ( StringUtil.isEmpty(attr) || StringUtil.isEmpty(value)) {
-            return;
+    public PlaybookStateTuple getStateTuple(PlaybookState state) {
+        PlaybookStateTuple result = null;
+        if ( state==null ) {
+            result = stateTuples.get(0);
+        }else {
+            for(int i=0;i<stateTuples.size();i++) {
+                PlaybookStateTuple stateTuple = stateTuples.get(i);
+                if ( stateTuple.getState()==state ) {
+                    result = stateTuple;
+                    break;
+                }
+            }
         }
-        switch(attr) {
-        case ATTR_OPEN_TIMEOUT:
-            openTimeout = ConversionUtil.toInt(attrs.getProperty(ATTR_OPEN_TIMEOUT), true);
-            break;
-        case ATTR_CLOSE_TIMEOUT:
-            closeTimeout = ConversionUtil.toInt(attrs.getProperty(ATTR_CLOSE_TIMEOUT), true);
-            break;
+        return result;
+    }
+
+    @Override
+    public Object getAttr(String attr) {
+        return attrs.get(attr);
+    }
+
+    @Override
+    public void setAttr(String attr, Object value) {
+        attrVersion++;
+        if ( value==null ) {
+            attrs.remove(attr);
+        } else {
+            attrs.put(attr, value);
         }
-        attrs.setProperty(attr, value);
+    }
+
+    public int getAttrVersion() {
+        return attrVersion;
     }
 
     @Override
-    public int getVolume(int volIndex) {
-        return volumes[volIndex];
+    public int getVolume(PBVol vol) {
+        return volumes[vol.ordinal()];
+    }
+
+    public void setVolume(PBVol vol, int value) {
+        volumes[vol.ordinal()] = value;
+    }
+
+    public int addVolume(PBVol vol, int toAdd) {
+        int idx = vol.ordinal();
+        volumes[idx]+=toAdd;
+        return volumes[idx];
     }
 
     @Override
-    public long getMoney(int mnyIndex) {
-        return money[mnyIndex];
+    public long getMoney(PBMoney mnyIndex) {
+        return money[mnyIndex.ordinal()];
+    }
+
+    public void setMoney(PBMoney mny, long value) {
+        money[mny.ordinal()] = value;
     }
 
     @Override
@@ -176,29 +186,31 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
         }
         long odrTxnPrice = odrTxnTurnover/odrTxnVolume;
         if ( order.getOffsetFlags()==OrderOffsetFlag.OPEN ) {
-            volumes[PBVol_Open] += txn.getVolume();
-            volumes[PBVol_Pos] += txn.getVolume();
-            money[PBMny_Open] = odrTxnPrice;
+            addVolume(PBVol.Open, txn.getVolume());
+            addVolume(PBVol.Pos, txn.getVolume());
+            setMoney(PBMoney.Open, odrTxnPrice);
         }else {
-            volumes[PBVol_Close] += txn.getVolume();
-            volumes[PBVol_Pos] -= txn.getVolume();
-            money[PBMny_Close] = odrTxnPrice;
+            addVolume(PBVol.Close, txn.getVolume());
+            addVolume(PBVol.Pos, txn.getVolume());
+            setMoney(PBMoney.Close, odrTxnPrice);
         }
 
-        if ( volumes[PBVol_Pos]==0 ) {
+        if ( getVolume(PBVol.Pos)==0 ) {
             direction = PosDirection.Net;
         }
     }
 
     /**
      * 当Order发生变化时, 同步更新状态
+     *
+     * @return 如果发送变化, 返回旧的状态; 如果没有状态变化返回null
      */
-    public PlaybookState checkStateOnOrder(Order order) {
+    public PlaybookStateTuple updateStateOnOrder(Order order) {
         OrderState odrState = order.getStateTuple().getState();
         OrderSubmitState odrSubmitState = order.getStateTuple().getSubmitState();
         PlaybookState newState = null;
         PlaybookState state = stateTuple.getState();
-        newStateOrder = null;
+        Order newStateOrder = null;
         if ( odrState.isDone() ) {
             pendingOrder = null;
         }else {
@@ -262,105 +274,218 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
             }
             break;
         }
-        return newState;
+        PlaybookStateTuple result = null;
+        if ( newState!=null ) {
+            result = changeStateTuple(newState, newStateOrder, null);
+        }
+        return result;
+    }
+
+    /**
+     * 当有新的行情来的时候, 检查是否需要及时关闭Playbook
+     */
+    public PlaybookStateTuple updateStateOnTick(MarketData tick) {
+        PlaybookState newState = null;
+        String newStateAction = canClose(tick);
+        if ( newStateAction!=null ) {
+            newState = PlaybookState.Closing;
+        }
+        PlaybookStateTuple result = null;
+        if ( newState!=null ) {
+            result = changeStateTuple(newState, null, newStateAction);
+        }
+        return result;
     }
 
     /**
      * 定期检查是否需要取消当前报单或强制平仓
+     *
+     * @return 如果发送变化, 返回旧的状态; 如果没有状态变化返回null
      */
-    public PlaybookState checkStateOnNoop() {
-        PlaybookState result = null;
-        newStateOrder = null;
+    public PlaybookStateTuple updateStateOnNoop() {
+        PlaybookState newState = null;
+        String newStateAction = null;
+        Order newStateOrder = null;
         long currTime = System.currentTimeMillis();
         long stateTime = stateTuple.getTimestamp();
         switch (stateTuple.getState()) {
-        case Opening: {// 检查是否要超时
-            if (openTimeout > 0 && (currTime - stateTime) >= openTimeout) {
-                result = PlaybookState.Canceling;
+        case Opening:
+        {// 检查是否要超时
+            long openTimeout = PBATTR_OPEN_TIMEOUT.getLong(this);
+            if (openTimeout > 0 && (currTime - stateTime) >= openTimeout * 1000) {
+                newState = PlaybookState.Canceling;
+                newStateAction = PBACTION_TIMEOUT;
                 newStateOrder = stateTuple.getOrder();
             }
-        }
             break;
-        case Closing: { //检查是否平仓超时
-            if ( closeTimeout>0 && (currTime-stateTime)>=closeTimeout) {
-                result = PlaybookState.ForceClosing;
+        }
+        case Closing:
+        { // 检查是否平仓超时
+            long closeTimeout = PBATTR_CLOSE_TIMEOUT.getLong(this);
+            if (closeTimeout > 0 && (currTime - stateTime) >= closeTimeout * 1000) {
+                newState = PlaybookState.ForceClosing;
+                newStateAction = PBACTION_TIMEOUT;
                 newStateOrder = stateTuple.getOrder();
             }
-        }
             break;
+        }
+        case Opened:
+        {//检查最后持有时间
+            newStateAction = canClose(null);
+            if ( newStateAction!=null ) {
+                newState = PlaybookState.Closing;
+            }
+            break;
+        }
         default:
             break;
+        }
+        PlaybookStateTuple result = null;
+        if ( newState!=null ) {
+            result = changeStateTuple(newState, newStateOrder, newStateAction);
+        }
+        return result;
+    }
+
+    /**
+     * 取消开仓中的报单
+     */
+    public boolean cancelOpeningOrder() {
+        boolean result = false;
+        if ( stateTuple.getState()==PlaybookState.Opening ) {
+            result = changeStateTuple(PlaybookState.Canceling, stateTuple.getOrder(), null)!=null;
+        }
+        return result;
+    }
+
+    /**
+     * 平仓已开仓持有仓位
+     */
+    public boolean closeOpenedOrder(String actionId) {
+        boolean result = false;
+        if ( stateTuple.getState()==PlaybookState.Opened ) {
+            result = changeStateTuple(PlaybookState.Closing, null, actionId)!=null;
         }
         return result;
     }
 
     /**
      * 切换到新的StateTuple, 这个过程可能会对当前报单有撤销或修改, 或创建新的报单
+     *
+     * @return 返回旧状态, 如果没有更新, 返回null
      */
-    public PlaybookStateTuple changeStateTuple(BeansContainer beansContainer, Account account, PlaybookState newState)
+    private PlaybookStateTuple changeStateTuple(PlaybookState newState, Order newStateOrder, String actionId)
     {
+        PlaybookStateTuple oldStateTuple = stateTuple;
+        BeansContainer beansContainer = group.getBeansContainer();
+        Account account = group.getAccount();
         OrderAction orderAction = null;
         Order stateOrder = newStateOrder;
-        switch(newState) {
-        case Canceling:{ //取消当前报单
-            try {
-                orderAction = OrderAction.Cancel;
-                account.cancelOrder(stateOrder.getRef());
-            } catch (AppException e) {
-                newState = PlaybookState.Failed;
-                logger.error("Playbook "+getId()+" cancel failed: "+e.getMessage(), e);
+        if ( newState!=oldStateTuple.getState() ) {
+            switch(newState) {
+            case Canceling:{ //取消当前报单
+                try {
+                    orderAction = OrderAction.Cancel;
+                    account.cancelOrder(stateOrder.getRef());
+                } catch (AppException e) {
+                    newState = PlaybookState.Failed;
+                    logger.error("Playbook "+getId()+" cancel failed: "+e.getMessage(), e);
+                }
             }
-        }
-        break;
-        case Canceled:{ //对于已取消报单, 更新状态
-            if ( volumes[PBVol_Pos]==0 ) {
-                direction = PosDirection.Net;
+            break;
+            case Canceled:{ //对于已取消报单, 更新状态
+                if ( getVolume(PBVol.Pos)==0 ) {
+                    direction = PosDirection.Net;
+                }
             }
-        }
-        break;
-        case Closing:{ //生成一个新的平仓报单
-            stateOrder = null;
-            orderAction = OrderAction.Send;
-            OrderBuilder odrBuilder = createCloseOrderBuilder(beansContainer, account, OrderPriceType.LimitPrice);
-            try{
-                stateOrder = account.createOrder(odrBuilder);
-                orders.add(stateOrder);
-                pendingOrder = stateOrder;
-                volumes[PBVol_Closing] += odrBuilder.getVolume();
-                money[PBMny_Closing] = odrBuilder.getLimitPrice();
-            }catch(AppException e) {
-                //平仓失败, 手工处理
-                newState = PlaybookState.Failed;
-                logger.error("Playbook "+getId()+" close failed: "+e.getMessage(), e);
+            break;
+            case Closing:{ //生成一个新的平仓报单
+                stateOrder = null;
+                orderAction = OrderAction.Send;
+                OrderBuilder odrBuilder = createCloseOrderBuilder(beansContainer, account, OrderPriceType.BestPrice);
+                try{
+                    stateOrder = account.createOrder(odrBuilder);
+                    orders.add(stateOrder);
+                    pendingOrder = stateOrder;
+                    addVolume(PBVol.Closing, odrBuilder.getVolume());
+                    setMoney(PBMoney.Closing, odrBuilder.getLimitPrice());
+                }catch(AppException e) {
+                    //平仓失败, 手工处理
+                    newState = PlaybookState.Failed;
+                    logger.error("Playbook "+getId()+" close failed: "+e.getMessage(), e);
+                }
             }
-        }
-        break;
-        case ForceClosing:{ //用市场价修改当前报单, 或再次用当前市场价生成一个新的报单
-            String orderRef = "";
-            try{
-                if ( stateOrder!=null ) {
-                    orderRef = stateOrder.getRef();
-                    orderAction = modifyCloseOrder(beansContainer, account, stateOrder);
-                } else {
-                    orderAction = OrderAction.Send;
-                    OrderBuilder odrBuilder = createCloseOrderBuilder(beansContainer, account, OrderPriceType.BestPrice);
+            break;
+            case ForceClosing:{ //用市场价修改当前报单, 或再次用当前市场价生成一个新的报单
+                String orderRef = "";
+                try{
+                    if ( stateOrder!=null ) {
+                        orderRef = stateOrder.getRef();
+                        orderAction = modifyCloseOrder(beansContainer, account, stateOrder);
+                    } else {
+                        orderAction = OrderAction.Send;
+                        OrderBuilder odrBuilder = createCloseOrderBuilder(beansContainer, account, OrderPriceType.BestPrice);
+                        if ( !StringUtil.isEmpty(actionId)) {
+                            odrBuilder.setAttr(Order.ODRATTR_PLAYBOOK_ACTION_ID, actionId);
+                        }
                         stateOrder = account.createOrder(odrBuilder);
                         orders.add(stateOrder);
                         pendingOrder = stateOrder;
-                        volumes[PBVol_Closing] += odrBuilder.getVolume();
-                        money[PBMny_Closing] = odrBuilder.getLimitPrice();
+                        addVolume(PBVol.Closing, odrBuilder.getVolume());
+                        setMoney(PBMoney.Closing, odrBuilder.getLimitPrice());
+                    }
+                }catch(AppException e) {
+                    //强制平仓失败, 手工处理
+                    newState = PlaybookState.Failed;
+                    logger.error("Playbook "+getId()+" force close "+orderRef+" failed: "+e.getMessage(), e);
                 }
-            }catch(AppException e) {
-                //强制平仓失败, 手工处理
-                newState = PlaybookState.Failed;
-                logger.error("Playbook "+getId()+" force close "+orderRef+" failed: "+e.getMessage(), e);
+            }
+                break;
             }
         }
-            break;
+        PlaybookStateTuple result = null;
+        if ( newState!=oldStateTuple.getState()) {
+            MarketTimeService mtService = group.getBeansContainer().getBean(MarketTimeService.class);
+            PlaybookStateTupleImpl newStateTuple = new PlaybookStateTupleImpl(mtService, newState, stateOrder, orderAction, actionId);
+            this.stateTuples.add(newStateTuple);
+            this.stateTuple = newStateTuple;
+            result = oldStateTuple;
         }
-        PlaybookStateTupleImpl result = new PlaybookStateTupleImpl(newState, stateOrder, orderAction);
-        this.stateTuple = result;
-        this.stateTuples.add(result);
+        return result;
+    }
+
+    /**
+     * 在开仓后, 检查是否可以平仓
+     */
+    private String canClose(MarketData tick) {
+        String result = null;
+//        MarketTimeService mtService = group.getBeansContainer().getBean(MarketTimeService.class);
+//        long maxLifeTime = 0;
+//        if ( result==null && (maxLifeTime = PBATTR_MAX_LIFETIME.getSecond(this))>0 ) {
+//            long currMillis = mtService.currentTimeMillis();
+//            if ( (currMillis-getStateTuple().getTimestamp())>maxLifeTime*1000 ) {
+//                result = PBACTION_MAXLIFETIME;
+//            }
+//        }
+//        LocalDateTime endTime = null;
+//        if ( result==null && (endTime = PBATTR_END_TIME.getDateTime(this))!=null ) {
+//            LocalDateTime mtTime = mtService.getMarketTime();
+//            if ( mtTime.isAfter(endTime)) {
+//                result = PBACTION_ENDTIME;
+//            }
+//        }
+//        long simplePriceAbove = 0;
+//        if ( result==null && tick!=null && (simplePriceAbove = PBATTR_SIMPLE_PRICE_ABOVE.getPrice(this))>0 ) {
+//            if ( tick.lastPrice>= simplePriceAbove ) {
+//                result = PBACTION_SIMPLE_PRICE_ABOVE+" "+PriceUtil.long2str(simplePriceAbove);
+//            }
+//        }
+//        long simplePriceBelow = 0;
+//        if ( result==null && tick!=null && (simplePriceBelow = PBATTR_SIMPLE_PRICE_BELOW.getPrice(this))>0 ) {
+//            if ( tick.lastPrice<= simplePriceBelow ) {
+//                result = PBATTR_SIMPLE_PRICE_BELOW+" "+PriceUtil.long2str(simplePriceBelow);
+//            }
+//        }
         return result;
     }
 
@@ -370,43 +495,45 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
      */
     private OrderBuilder createCloseOrderBuilder(BeansContainer beansContainer, Account account, OrderPriceType priceType) {
         MarketDataService mdService = beansContainer.getBean(MarketDataService.class);
-        MarketData md = mdService.getLastData(e);
+        MarketData md = mdService.getLastData(instrument);
         long closePrice = 0;
         if ( direction==PosDirection.Long ) {
-            //平多卖出
+            //平多卖出, 使用买1价
             closePrice = md.lastBidPrice();
         }else {
-            //平空买回
+            //平空买回, 使用卖1价
             closePrice = md.lastAskPrice();
         }
 
-        int posVolType = 0;
+        PosVolume posVolYdType, posVolTodayType;
         OrderDirection odrDirection;
         OrderOffsetFlag odrOffsetFlag = OrderOffsetFlag.CLOSE;
         if ( direction==PosDirection.Long ) {
-            posVolType = TradeConstants.PosVolume_LongYdPosition;
+            posVolYdType = TradeConstants.PosVolume.LongYdPosition;
+            posVolTodayType = TradeConstants.PosVolume.LongTodayPosition;
             odrDirection = OrderDirection.Sell;
         }else {
-            posVolType = TradeConstants.PosVolume_ShortYdPosition;
+            posVolYdType = TradeConstants.PosVolume.ShortYdPosition;
+            posVolTodayType = TradeConstants.PosVolume.ShortTodayPosition;
             odrDirection = OrderDirection.Buy;
         }
-        Position pos = account.getPosition(e);
-        if ( pos!=null ) {
-            if ( pos.getVolume(posVolType)==0 ) {
-                //无昨仓, 使用平今
-                odrOffsetFlag = OrderOffsetFlag.CLOSE_TODAY;
-            }else if ( pos.getVolume(posVolType)>volumes[PBVol_Pos] ) {
+        Position pos = account.getPosition(instrument);
+        if ( pos!=null && instrument.exchange()==Exchange.SHFE ) { //上期考虑平今平昨
+            if ( pos.getVolume(posVolYdType)>=getVolume(PBVol.Pos) ) {
                 //昨仓足够, 使用平昨
                 odrOffsetFlag = OrderOffsetFlag.CLOSE_YESTERDAY;
+            } else if (pos.getVolume(posVolTodayType)>=getVolume(PBVol.Pos) ) {
+                //今仓足够, 使用平今
+                odrOffsetFlag = OrderOffsetFlag.CLOSE_TODAY;
             }
         }
         OrderBuilder odrBuilder = new OrderBuilder()
-            .setExchagneable(e)
-            .setVolume(volumes[PBVol_Pos])
-            .setAttr(ATTR_PLAYBOOK_ID, id)
+            .setExchagneable(instrument)
+            .setVolume(getVolume(PBVol.Pos))
+            .setAttr(Order.ODRATTR_PLAYBOOK_ID, id)
+            .setAttr(Order.ODRATTR_TRADLET_GROUP_ID, group.getId())
             .setLimitPrice(closePrice)
             .setPriceType(priceType)
-            .setPriceType(OrderPriceType.BestPrice)
             .setDirection(odrDirection)
             .setOffsetFlag(odrOffsetFlag);
 
@@ -421,7 +548,7 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
         OrderAction result = null;
         if ( !order.getStateTuple().getState().isDone() ) {
             MarketDataService mdService = beansContainer.getBean(MarketDataService.class);
-            MarketData md = mdService.getLastData(e);
+            MarketData md = mdService.getLastData(instrument);
             result = OrderAction.Modify;
 
             long closePrice = 0;
@@ -434,7 +561,7 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
             }
 
             OrderBuilder odrBuilder = new OrderBuilder()
-                    .setExchagneable(e)
+                    .setExchagneable(instrument)
                     .setLimitPrice(closePrice);
 
             account.modifyOrder(order.getRef(), odrBuilder);
@@ -446,14 +573,35 @@ public class PlaybookImpl implements Playbook, JsonEnabled {
     public JsonElement toJson() {
         JsonObject json = new JsonObject();
         json.addProperty("id", id);
-        json.addProperty("stateTuple", stateTuple.toString());
+        json.addProperty("groupId", group.getId());
+        json.addProperty("instrument", instrument.toString());
+        json.add("stateTuple", JsonUtil.object2json(stateTuple));
+        json.add("stateTuples", JsonUtil.object2json(stateTuples));
         json.addProperty("direction", direction.name());
-        json.add("volumes",  JsonUtil.object2json(volumes));
+        json.add("volumes",  TradletConstants.pbVolume2json(volumes));
+        json.add("money",  TradletConstants.pbMoney2json(money));
         if( attrs!=null ) {
-            json.add("attrs", JsonUtil.object2json(attrs));
+            JsonObject attrsJson = new JsonObject();
+            for(String attr:attrs.keySet()) {
+                Object val = attrs.get(attr);
+                attrsJson.add(attr, JsonUtil.object2json(val, false));
+            }
+            json.add("attrs", attrsJson);
         }
-        json.add("policyIds", TradletConstants.policy2json(policyIds));
+        JsonArray ordersJson = new JsonArray();
+        for(Order order:orders) {
+            ordersJson.add(order.getId());
+        }
+        json.add("orders", ordersJson);
+        if ( pendingOrder!=null ) {
+            json.addProperty("pendingOrder", pendingOrder.getId());
+        }
         return json;
+    }
+
+    @Override
+    public String toString() {
+        return toJson().toString();
     }
 
     @Override

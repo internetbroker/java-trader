@@ -2,6 +2,7 @@ package trader.service.tradlet;
 
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
@@ -10,7 +11,11 @@ import trader.common.exception.AppException;
 import trader.common.exchangeable.Exchangeable;
 import trader.common.util.ConversionUtil;
 import trader.common.util.IniFile;
+import trader.common.util.StringUtil;
 import trader.service.ServiceErrorCodes;
+import trader.service.md.MarketDataService;
+import trader.service.trade.Account;
+import trader.service.trade.TradeService;
 
 /**
  * 代表从配置解析后的TradletGroup的配置项.
@@ -19,11 +24,14 @@ import trader.service.ServiceErrorCodes;
 public class TradletGroupTemplate implements ServiceErrorCodes, TradletConstants {
     String config;
     TradletGroupState state = TradletGroupState.Enabled;
-    Exchangeable exchangeable;
+    String playbookTemplate;
+    List<Exchangeable> instruments;
     List<TradletHolder> tradletHolders = new ArrayList<>();
+    Account account;
 
     public static TradletGroupTemplate parse(BeansContainer beansContainer, TradletGroupImpl group, String configText) throws AppException
     {
+        TradeService tradeService = beansContainer.getBean(TradeService.class);
         TradletService tradletService = beansContainer.getBean(TradletService.class);
         TradletGroupTemplate template = new TradletGroupTemplate();
         template.config = configText;
@@ -36,24 +44,41 @@ public class TradletGroupTemplate implements ServiceErrorCodes, TradletConstants
         IniFile.Section commonSection = groupConfig.getSection("common");
         {
             Properties props = commonSection.getProperties();
-            String exchangeableStr = props.getProperty("exchangeable");
-            if ( props.containsKey("exchangeable")) {
-                template.exchangeable = Exchangeable.fromString(exchangeableStr);
+            String accountStr = props.getProperty("account");
+            template.account = tradeService.getAccount(accountStr);
+            String instrumentStr = props.getProperty("instrument");
+            if ( props.containsKey("instruments")) {
+                instrumentStr = props.getProperty("instruments");
+            }
+            if ( !StringUtil.isEmpty(instrumentStr)){
+                List<Exchangeable> instruments = new ArrayList<>();
+                for(String instrument:StringUtil.split(instrumentStr, ",|;")) {
+                    instruments.add(resolveInstrument(beansContainer,instrument));
+                }
+                Collections.sort(instruments);
+                template.instruments = instruments;
+            }
+            if (!StringUtil.isEmpty(accountStr) && template.account==null) {
+                throw new AppException(ERR_TRADLET_INVALID_ACCOUNT_VIEW, "策略组 "+group.getId()+" 账户 "+props.getProperty("account")+" 不存在");
             }
             if ( props.containsKey("state")) {
                 template.state = ConversionUtil.toEnum(TradletGroupState.class, props.getProperty("state"));
             }
-            if ( template.exchangeable==null ) {
-                throw new AppException(ERR_TRADLET_INVALID_EXCHANGEABLE, "策略组 "+group.getId()+" 交易品种 "+exchangeableStr+" 不存在");
+            if ( template.instruments==null ) {
+                throw new AppException(ERR_TRADLET_INVALID_EXCHANGEABLE, "策略组 "+group.getId()+" 交易品种不存在");
             }
+        }
+        IniFile.Section pbTemplatesSection = groupConfig.getSection("playbookTemplate");
+        if ( pbTemplatesSection!=null ){
+            template.playbookTemplate = pbTemplatesSection.getText();
         }
         {
             for(IniFile.Section section:groupConfig.getAllSections()) {
-                if ( section.getName().equals("common")) {
+                String secName = section.getName();
+                if ( StringUtil.equals(secName, "common") || StringUtil.equals(secName, "playbookTemplate")) {
                     continue;
                 }
-                Properties props = section.getProperties();
-                TradletHolder tradletHolder = createTradlet(tradletService, group, template, props);
+                TradletHolder tradletHolder = createTradlet(tradletService, group, template, section);
                 template.tradletHolders.add(tradletHolder);
             }
         }
@@ -63,14 +88,13 @@ public class TradletGroupTemplate implements ServiceErrorCodes, TradletConstants
     /**
      * 创建并初始化Tradlet
      */
-    private static TradletHolder createTradlet(TradletService tradletService, TradletGroupImpl group, TradletGroupTemplate template, Properties props) throws AppException
+    private static TradletHolder createTradlet(TradletService tradletService, TradletGroupImpl group, TradletGroupTemplate template, IniFile.Section section) throws AppException
     {
-        String tradletId = props.getProperty("id");
+        String tradletId = section.getName();
         TradletInfo tradletInfo = tradletService.getTradletInfo(tradletId);
         if ( tradletInfo==null ) {
             throw new AppException(ERR_TRADLET_TRADLET_NOT_FOUND, "不存在的 Tradlet : "+tradletId);
         }
-        props.remove("id");
 
         Tradlet tradlet = null;
         try{
@@ -78,7 +102,25 @@ public class TradletGroupTemplate implements ServiceErrorCodes, TradletConstants
         }catch(Throwable t) {
             throw new AppException(t, ERR_TRADLET_TRADLET_CREATE_FAILED, "Tradlet "+tradletId+" 创建失败: "+t.toString());
         }
-        return new TradletHolder(tradletId, tradlet, new TradletContextImpl(group, props));
+        return new TradletHolder(tradletId, tradlet, new TradletContextImpl(group, section.getText()));
     }
 
+    private static Exchangeable resolveInstrument(BeansContainer beansContainer, String instrumentId) throws AppException
+    {
+        Exchangeable result = null;
+        if ( instrumentId.startsWith("$")) {
+            MarketDataService mdService= beansContainer.getBean(MarketDataService.class);
+            result = mdService.getPrimaryInstrument(null, instrumentId.substring(1));
+            if ( result==null ) {
+                throw new AppException(ERR_TRADLET_INVALID_INSTRUMENT, "不存在的合约 : "+instrumentId);
+            }
+        } else {
+            try{
+                result = Exchangeable.fromString(instrumentId);
+            }catch(RuntimeException re) {
+                throw new AppException(ERR_TRADLET_INVALID_INSTRUMENT, "不存在的合约 : "+instrumentId);
+            }
+        }
+        return result;
+    }
 }

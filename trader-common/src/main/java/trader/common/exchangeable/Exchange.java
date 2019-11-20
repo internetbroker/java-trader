@@ -5,35 +5,28 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoField;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeSet;
+
+import trader.common.exchangeable.ExchangeContract.MarketTimeRecord;
+import trader.common.exchangeable.ExchangeContract.MarketTimeSegment;
+import trader.common.exchangeable.ExchangeableTradingTimes.MarketTimeSegmentInfo;
+import trader.common.util.DateUtil;
+import trader.common.util.StringUtil;
 
 public class Exchange {
 
-    /**
-     * 市场类型: 日市夜市
-     */
-    public static enum MarketType{
-        /**
-         * 日盘
-         */
-        Day,
-        /**
-         * 夜盘
-         */
-        Night
-    }
-
     private String name;
-
-    /**
-     * open-close
-     * open-close
-     */
-    private LocalTime[] defaultDayMarketTimes;
-    private LocalTime[] defaultNightMarketTimes;
-    private ZoneId     zoneId;
+    private ZoneId zoneId;
     private ZoneOffset zoneOffset;
-    private boolean    future;
+    private boolean future;
+    private Map<String, ExchangeContract> contracts;
+    private LocalTime[] marketTimes;
 
     public String name() {
         return name;
@@ -53,116 +46,6 @@ public class Exchange {
         return !future;
     }
 
-    public boolean hasMarket(MarketType marketType){
-        switch(marketType){
-        case Day:
-            return defaultDayMarketTimes!=null;
-        case Night:
-            return defaultNightMarketTimes!=null;
-        }
-        return false;
-    }
-
-    private LocalTime[] getMarketTimes0(MarketType marketType, String instrumentId, LocalDate tradingDay){
-        if ( marketType==MarketType.Night && defaultDayMarketTimes == null){
-            throw new RuntimeException(name()+" 不支持夜盘");
-        }
-        ExchangeContract contract = ExchangeContract.matchContract(this, instrumentId);
-        if ( contract== null ) {
-            throw new RuntimeException("Unable to match exchange contract for "+this+"."+instrumentId);
-        }
-
-        for(ExchangeContract.TimeStage stage: contract.getTimeStages()) {
-            if ( stage.getMarketType()==marketType ) {
-                return stage.getTimeFrames();
-            }
-        }
-        switch(marketType){
-        case Day:
-            return defaultDayMarketTimes;
-        case Night:
-            return defaultNightMarketTimes;
-        }
-        return null;
-    }
-
-    public LocalDateTime[] getMarketTimes(MarketType marketType, String instrumentId, LocalDate tradingDay)
-    {
-        LocalTime[] marketTimes = getMarketTimes0(marketType, instrumentId, tradingDay);
-        if ( marketTimes==null ){
-            return null;
-        }
-        switch(marketType){
-        case Day:
-            LocalDateTime[] result = new LocalDateTime[marketTimes.length];
-            for(int i=0;i<marketTimes.length;i++){
-                result[i] = tradingDay.atTime(marketTimes[i]);
-            }
-            return result;
-        case Night:
-            LocalTime beginTime = marketTimes[0];
-            LocalTime endTime = marketTimes[marketTimes.length-1];
-            LocalDate prevTradingDay = MarketDayUtil.prevMarketDay(this, tradingDay);
-            LocalDateTime endDateTime = prevTradingDay.atTime(endTime);
-            if ( endTime.getHour()<beginTime.getHour() ){ //next day
-                endDateTime = prevTradingDay.plusDays(1).atTime(endTime);
-            }
-            return new LocalDateTime[]{ prevTradingDay.atTime(beginTime), endDateTime };
-        }
-        throw new RuntimeException("Should not run here.");
-    }
-
-    public LocalDateTime[] getOpenCloseTime(MarketType marketType, String instrumentId, LocalDate tradingDay)
-    {
-        LocalDateTime[] marketTimes = getMarketTimes(marketType, instrumentId, tradingDay);
-        if ( marketTimes==null ){
-            return null;
-        }
-        return new LocalDateTime[]{ marketTimes[0], marketTimes[marketTimes.length-1]};
-    }
-
-    public LocalTime[] getDefaultOpenCloseTime(MarketType marketType){
-        switch(marketType){
-        case Day:
-            return new LocalTime[]{defaultDayMarketTimes[0], defaultDayMarketTimes[defaultDayMarketTimes.length-1]};
-        case Night:
-            if( defaultNightMarketTimes!=null ){
-                return new LocalTime[]{defaultDayMarketTimes[0], defaultDayMarketTimes[defaultDayMarketTimes.length-1]};
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 返回从交易开始算起毫秒数
-     *
-     * @return -1 不存在
-     */
-    public int getTradingMilliSeconds(MarketType marketType, String instrumentId, LocalDate tradingDay, LocalTime marketTime){
-        LocalTime[] marketTimes = getMarketTimes0(marketType, instrumentId, tradingDay);
-        if ( marketTimes==null ){
-            return -1;
-        }
-        if ( marketTime.isBefore(marketTimes[0]) ){
-            return 0;
-        }
-        int milliSeconds = 0;
-
-        for(int i=0;i<marketTimes.length;i+=2){
-            LocalTime beginTime = marketTimes[i];
-            LocalTime endTime = marketTimes[i+1];
-            if ( marketTime.isBefore(beginTime) ){ //In break time
-                break;
-            }
-            if ( marketTime.isBefore(endTime) ){
-                milliSeconds += ( marketTime.get(ChronoField.MILLI_OF_DAY) - beginTime.get(ChronoField.MILLI_OF_DAY));
-            }else{
-                milliSeconds += ( endTime.get(ChronoField.MILLI_OF_DAY) - beginTime.get(ChronoField.MILLI_OF_DAY));
-            }
-        }
-        return milliSeconds;
-    }
-
     public ZoneId getZoneId() {
         return zoneId;
     }
@@ -171,13 +54,138 @@ public class Exchange {
         return zoneOffset;
     }
 
-    private Exchange(String name, boolean future, LocalTime[] dayMarketTimes, LocalTime[] nightMarketTimes, ZoneId zoneId) {
+    public LocalTime[] getMarketTimes() {
+        return marketTimes;
+    }
+
+    /**
+     * 规范交易所品种大小写
+     */
+    public String canonicalCommodity(String commodity) {
+        for(String key:contracts.keySet()) {
+            if ( StringUtil.equalsIgnoreCase(key, commodity)) {
+                return key;
+            }
+        }
+        return commodity;
+    }
+
+    public ExchangeableTradingTimes detectTradingTimes(Exchangeable e, LocalDateTime time) {
+        return detectTradingTimes(e.id(), time);
+    }
+
+    public ExchangeableTradingTimes getTradingTimes(Exchangeable instrument, LocalDate tradingDay) {
+        return getTradingTimes(instrument.id(), tradingDay);
+    }
+
+    public ExchangeableTradingTimes detectTradingTimes(String instrumentId, LocalDateTime time) {
+        ExchangeableTradingTimes result = null;
+
+        int hhmmss = DateUtil.time2int(time.toLocalTime());
+        LocalDate tradingDay = time.toLocalDate();
+        if ( hhmmss<=30000 ) {
+            //凌晨使用前一天的下一个TradingDay
+            tradingDay =  MarketDayUtil.nextMarketDay(this, tradingDay.minusDays(1));
+        }
+        result = getTradingTimes(instrumentId, tradingDay);
+        if ( result!=null ) {
+            LocalDateTime[] marketTimes = result.getMarketTimes();
+            if ( time.compareTo(marketTimes[marketTimes.length-1].plusHours(2))<=0 ){
+                return result;
+            }
+            result = getTradingTimes(instrumentId, MarketDayUtil.nextMarketDay(this, time.toLocalDate()));
+        }
+        return result;
+    }
+
+    public ExchangeableTradingTimes getTradingTimes(String instrumentId, LocalDate tradingDay) {
+        if ( !MarketDayUtil.isMarketDay(this, tradingDay)) {
+            return null;
+        }
+        ExchangeContract contract = matchContract(instrumentId);
+        if( contract==null ) {
+            return null;
+        }
+        LinkedList<LocalDateTime> marketTimes = new LinkedList<>();
+        List<MarketTimeSegmentInfo> segmentInfos = new ArrayList<>();
+        MarketTimeRecord timeRecord = contract.matchMarketTimeRecords(tradingDay);
+        for(MarketTimeSegment segment:timeRecord.getTimeStages()) {
+            LocalDate stageTradingDay = tradingDay;
+            if ( segment.lastTradingDay ) {
+                stageTradingDay = MarketDayUtil.prevMarketDay(this, tradingDay, true);
+            }
+            if ( stageTradingDay!=null ) {
+                List<LocalDateTime> segTimes = new ArrayList<>();
+                for(int i=0;i<segment.timeFrames.length;i++) {
+                    LocalDateTime time = segment.timeFrames[i].atDate(stageTradingDay);
+                    if ( i>0 && time.isBefore(marketTimes.getLast()) ){
+                        time = time.plusDays(1);
+                    }
+                    marketTimes.add(time);
+                    segTimes.add(time);
+                }
+                segmentInfos.add(new MarketTimeSegmentInfo(segment, segTimes.toArray(new LocalDateTime[segTimes.size()])));
+            }
+        }
+
+        return new ExchangeableTradingTimes(Exchangeable.fromString(name(), instrumentId), tradingDay
+                ,marketTimes.toArray(new LocalDateTime[marketTimes.size()])
+                , segmentInfos );
+    }
+
+    public ExchangeContract matchContract(String instrument) {
+        //证券交易所, 找 sse.* 这种
+        if ( isSecurity() ) {
+            return contracts.get("*");
+        }
+        //期货交易所, 找 cffex.TF1810, 找cffex.TF, 再找 cffex.*
+        ExchangeContract contract = contracts.get(instrument);
+        if ( contract==null ) {
+            StringBuilder commodity = new StringBuilder(10);
+            for(int i=0;i<instrument.length();i++) {
+                char ch = instrument.charAt(i);
+                if ( ch>='0' && ch<='9' ) {
+                    break;
+                }
+                commodity.append(ch);
+            }
+            contract = contracts.get(commodity.toString().toUpperCase());
+            if ( contract==null ) {
+                contract = contracts.get(commodity.toString().toLowerCase());
+            }
+        }
+        if ( contract==null ) {
+            contract = contracts.get("*");
+        }
+        return contract;
+    }
+
+    /**
+     * 返回交易所的合约列表
+     */
+    public Collection<String> getContractNames(){
+        TreeSet<String> result = new TreeSet<>();
+        for(String key:contracts.keySet()) {
+            if ( key.equals("*") ) {
+                continue;
+            }
+            result.add(key);
+        }
+        return result;
+    }
+
+    private Exchange(String name, boolean future, ZoneId zoneId, LocalTime[] marketTimes) {
         this.name = name;
         this.future = future;
-        this.defaultDayMarketTimes = dayMarketTimes;
-        this.defaultNightMarketTimes = nightMarketTimes;
         this.zoneId = zoneId;
         this.zoneOffset = LocalDateTime.now().atZone(zoneId).getOffset();
+        this.marketTimes = marketTimes;
+        contracts = new HashMap<>();
+        for(ExchangeContract contract: ExchangeContract.getContracts(name)) {
+            for(String commodity:contract.getCommodities()) {
+                contracts.put(commodity, contract);
+            }
+        }
     }
 
     @Override
@@ -186,54 +194,50 @@ public class Exchange {
     }
 
     private static final ZoneId ZONEID_BEIJING = ZoneId.of("Asia/Shanghai");
-    private static LocalTime[] DAY_TIME_STOCK = new LocalTime[]{LocalTime.of(9, 30), LocalTime.of(11,30), LocalTime.of(13, 0), LocalTime.of(15, 0)};
-    private static LocalTime[] DAY_TIME_CFFEX = new LocalTime[]{LocalTime.of(9, 15), LocalTime.of(11,30), LocalTime.of(13, 0), LocalTime.of(15, 15)};
+    private static LocalTime[] DAY_TIME_STOCK = new LocalTime[]{LocalTime.of(9, 30), LocalTime.of(15, 0)};
+    private static LocalTime[] DAY_TIME_CFFEX = new LocalTime[]{LocalTime.of(9, 15), LocalTime.of(15, 15)};
 
-    private static LocalTime[] DAY_TIME_FUTURE = new LocalTime[]{
-            LocalTime.of(9, 0), LocalTime.of(10, 15),
-            LocalTime.of(10, 30), LocalTime.of(11,30),
-            LocalTime.of(13, 30), LocalTime.of(15, 0)};
-    private static LocalTime[] NIGHT_TIME_FUTURE = new LocalTime[]{LocalTime.of(21, 00), LocalTime.of(23,00)};
+    private static LocalTime[] DAY_TIME_FUTURE = new LocalTime[]{ LocalTime.of(9, 0), LocalTime.of(15, 0)};
 
     /**
      * 上证
      */
-    public static final Exchange    SSE            = new Exchange("sse", false, DAY_TIME_STOCK, null, ZONEID_BEIJING);
+    public static final Exchange    SSE            = new Exchange("sse", false, ZONEID_BEIJING, DAY_TIME_STOCK);
 
     /**
      * 深证
      */
-    public static final Exchange    SZSE           = new Exchange("szse", false, DAY_TIME_STOCK, null, ZONEID_BEIJING);
+    public static final Exchange    SZSE           = new Exchange("szse", false, ZONEID_BEIJING, DAY_TIME_STOCK);
 
     /**
      * 港股
      */
-    public static final Exchange    HKEX           = new Exchange("hkex", false, DAY_TIME_STOCK, null, ZONEID_BEIJING);
+    public static final Exchange    HKEX           = new Exchange("hkex", false, ZONEID_BEIJING, DAY_TIME_STOCK);
 
     /**
      * 中金所
      */
-    public static final Exchange    CFFEX          = new Exchange("cffex", true, DAY_TIME_CFFEX, null, ZONEID_BEIJING);
+    public static final Exchange    CFFEX          = new Exchange("cffex", true, ZONEID_BEIJING, DAY_TIME_CFFEX);
 
     /**
      * 大连商品交易所
      */
-    public static final Exchange    DCE            = new Exchange("dce", true, DAY_TIME_FUTURE, NIGHT_TIME_FUTURE, ZONEID_BEIJING);
+    public static final Exchange    DCE            = new Exchange("dce", true, ZONEID_BEIJING, DAY_TIME_FUTURE);
 
     /**
-     *  郑州商品交易所
+     *  郑州商品交易所, 匪所
      */
-    public static final Exchange    CZCE            = new Exchange("czce", true, DAY_TIME_FUTURE, NIGHT_TIME_FUTURE, ZONEID_BEIJING);
+    public static final Exchange    CZCE            = new Exchange("czce", true, ZONEID_BEIJING, DAY_TIME_FUTURE);
 
     /**
      *  上海国际能源交易中心
      */
-    public static final Exchange    INE            = new Exchange("ine", true, DAY_TIME_FUTURE, NIGHT_TIME_FUTURE, ZONEID_BEIJING);
+    public static final Exchange    INE            = new Exchange("ine", true, ZONEID_BEIJING, DAY_TIME_FUTURE);
 
     /**
      * 上期
      */
-    public static final Exchange    SHFE           = new Exchange("shfe", true, DAY_TIME_FUTURE, NIGHT_TIME_FUTURE, ZONEID_BEIJING);
+    public static final Exchange    SHFE           = new Exchange("shfe", true, ZONEID_BEIJING, DAY_TIME_FUTURE);
 
     public static final String      SSE_NAME       = SSE.name();
     public static final String      SZSE_NAME      = SZSE.name();
@@ -260,34 +264,6 @@ public class Exchange {
 
     public static final Exchange[] getInstances() {
         return exchanges;
-    }
-
-    public MarketType detectMarketTypeAt(Exchangeable e, LocalDateTime marketDateTime) {
-        LocalDate marketDay = marketDateTime.toLocalDate();
-        LocalTime marketTime = marketDateTime.toLocalTime();
-        LocalTime[] dayTimes = getDefaultOpenCloseTime(MarketType.Day);
-        dayTimes[0] = dayTimes[0].minusHours(1);
-        dayTimes[1] = dayTimes[1].plusHours(1);
-        if ( dayTimes[0].isBefore(marketTime) && marketTime.isBefore(dayTimes[1]) ){
-            return MarketType.Day;
-        }
-        if ( !hasMarket(MarketType.Night) ){
-            return null;
-        }
-        LocalDateTime[] nightTimes = null;
-        if ( marketDateTime.getHour()< dayTimes[0].getHour() ){ //第二天凌晨了,交易日不变
-            nightTimes = getOpenCloseTime(MarketType.Night, e.commodity(), marketDay);
-        }else{ //同一天晚,交易日改为下一个交易日
-            nightTimes = getOpenCloseTime(MarketType.Night, e.commodity(), MarketDayUtil.nextMarketDay(this, marketDay));
-        }
-        if ( nightTimes!=null ){
-            nightTimes[0] = nightTimes[0].minusHours(1);
-            nightTimes[1] = nightTimes[1].plusHours(1);
-            if ( nightTimes[0].isBefore(marketDateTime) && marketDateTime.isBefore(nightTimes[1])){
-                return MarketType.Night;
-            }
-        }
-        return null;
     }
 
 }

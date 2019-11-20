@@ -1,10 +1,14 @@
 package trader.simulator;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
+import trader.common.util.DateUtil;
 import trader.service.trade.MarketTimeService;
 
 /**
@@ -12,12 +16,13 @@ import trader.service.trade.MarketTimeService;
  */
 public class SimMarketTimeService implements MarketTimeService {
 
+    private ZoneId timeZone = DateUtil.getDefaultZoneId();
     private LocalDateTime time = LocalDateTime.now();
     private List<SimMarketTimeAware> timeListeners = new ArrayList<>();
 
     private LocalDate tradingDay;
-    private LocalDateTime beginTime;
-    private LocalDateTime endTime;
+    private LocalDateTime[][] timeRanges;
+    private int timeRangeIndex;
 
     /**
      * 最小时间间隔(ms)
@@ -25,24 +30,32 @@ public class SimMarketTimeService implements MarketTimeService {
     private int minTimeInterval = 100;
 
     @Override
+    public long currentTimeMillis() {
+        Instant instant = time.atZone(timeZone).toInstant();
+        return instant.toEpochMilli();
+    }
+
+    @Override
     public LocalDateTime getMarketTime() {
         return time;
     }
 
     @Override
-    public LocalDate getMarketDay() {
-        return time.toLocalDate();
+    public LocalDate getTradingDay() {
+        return tradingDay;
     }
 
     public void addListener(SimMarketTimeAware timeAware) {
         timeListeners.add(timeAware);
     }
 
-    public void setTimeRange(LocalDate tradingDay, LocalDateTime beginTime, LocalDateTime endTime) {
+    public void setTimeRanges(LocalDate tradingDay, LocalDateTime[] timeRanges) {
         this.tradingDay = tradingDay;
-        this.beginTime = beginTime;
-        this.endTime = endTime;
-        this.time = beginTime;
+        this.timeRanges = new LocalDateTime[timeRanges.length/2][];
+        for(int i=0;i<timeRanges.length;i+=2) {
+            this.timeRanges[i/2] = new LocalDateTime[] { timeRanges[i], timeRanges[i+1]};
+        }
+        this.time = timeRanges[0];
     }
 
     /**
@@ -50,18 +63,26 @@ public class SimMarketTimeService implements MarketTimeService {
      */
     public boolean nextTimePiece()
     {
-        //提前10分钟
-        if ( time==null )
-            time = beginTime;
-        //收市一分钟后结束
-        if ( time.compareTo(endTime)>=0 )
+        if ( timeRangeIndex>=timeRanges.length) {
             return false;
-
+        }
+        LocalDateTime[] timeRange = timeRanges[timeRangeIndex];
+        LocalDateTime beginTime = timeRange[0], endTime = timeRange[1];
+        if ( time==null ) {
+            time = beginTime;
+        } else if ( time.compareTo(endTime)>=0 ) {
+            timeRangeIndex++;
+            return nextTimePiece();
+        }
         LocalDateTime dt = time;
         for(SimMarketTimeAware c:timeListeners)
             c.onTimeChanged(tradingDay, dt);
-        time = time.plusNanos(minTimeInterval*1000000);
+        time = time.plus(minTimeInterval, ChronoUnit.MILLIS);
         return true;
+    }
+
+    public String toString() {
+        return DateUtil.date2str(time);
     }
 
 }

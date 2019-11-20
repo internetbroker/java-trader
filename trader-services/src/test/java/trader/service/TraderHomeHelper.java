@@ -11,31 +11,32 @@ import trader.service.config.ConfigServiceImpl;
  */
 public class TraderHomeHelper {
 
-    public static void init() {
-    }
+    private static File DEFAULT_CFG_FILE = new File( TraderHomeHelper.class.getClassLoader().getResource("etc/trader.xml").getFile());
 
-    public static void setTraderConfigFile(File file) throws Exception
-    {
-        System.setProperty(TraderHomeUtil.PROP_TRADER_CONFIG_FILE, file.getAbsolutePath());
-        ConfigServiceImpl.staticRegisterProvider("TRADER", new XMLConfigProvider(file));
-    }
+    private static File lastCfgFile = null;
 
-    static {
-        init0();
-    }
-
-    private static void init0() {
-        File traderXml = new File( TraderHomeHelper.class.getClassLoader().getResource("etc/trader.xml").getFile());
-        File file = traderXml.getParentFile().getParentFile();
-        System.setProperty(TraderHomeUtil.PROP_TRADER_HOME, file.getAbsolutePath());
-        File dataDir = new File(file, "data");
-        System.setProperty(TraderHomeUtil.PROP_REPOSITORY_DIR, dataDir.getAbsolutePath());
-
-        System.setProperty(TraderHomeUtil.PROP_TRADER_CONFIG_FILE, traderXml.getAbsolutePath());
-        try {
-            ConfigServiceImpl.staticRegisterProvider("TRADER", new XMLConfigProvider(traderXml));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+    public static void init(File cfgFile) {
+        if ( cfgFile ==null ) {
+            cfgFile = DEFAULT_CFG_FILE;
         }
+
+        if ( lastCfgFile!=null && lastCfgFile.equals(cfgFile) ) {
+            return;
+        }
+
+        try {
+            File traderHome = DEFAULT_CFG_FILE.getParentFile().getParentFile();
+            System.setProperty(TraderHomeUtil.PROP_TRADER_HOME, traderHome.getAbsolutePath());
+            File dataDir = new File(traderHome, "data");
+            System.setProperty(TraderHomeUtil.PROP_REPOSITORY_DIR, dataDir.getAbsolutePath());
+
+            System.setProperty(TraderHomeUtil.PROP_TRADER_CONFIG_FILE, traderHome.getAbsolutePath());
+            ConfigServiceImpl.staticRegisterProvider("TRADER", new XMLConfigProvider(cfgFile));
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+        lastCfgFile = cfgFile;
+
     }
+
 }

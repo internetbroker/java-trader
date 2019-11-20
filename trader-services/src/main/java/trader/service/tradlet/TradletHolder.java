@@ -13,6 +13,7 @@ import trader.service.ServiceErrorCodes;
 class TradletHolder implements JsonEnabled, ServiceErrorCodes {
     private String id;
     private Tradlet tradlet;
+    private long tradletTimestamp;
     private TradletContext context;
     private Throwable lastThrowable;
     private long lastThrowableTime;
@@ -32,20 +33,49 @@ class TradletHolder implements JsonEnabled, ServiceErrorCodes {
         return tradlet;
     }
 
+    public long getTradletTimestamp() {
+        return tradletTimestamp;
+    }
+
+    public TradletContext getContext() {
+        return context;
+    }
+
+    public boolean isDisabled() {
+        return context==null;
+    }
+
     /**
      * 在TradletGroup线程中独立完成初始化
      */
-    public void init() throws Exception {
+    public void init() throws Exception
+    {
         tradlet.init(context);
+    }
+
+    /**
+     * 在TradletGroup线程中重新加载配置参数
+     */
+    public void reload(TradletContext context) throws Exception
+    {
+        this.context = context;
+        tradlet.reload(context);
     }
 
     @Override
     public JsonElement toJson() {
         JsonObject json = new JsonObject();
         json.addProperty("id", id);
+        json.addProperty("disabled", isDisabled());
+        if( context!=null ) {
+            json.addProperty("config", context.getConfigText());
+        }
         json.addProperty("lastThrowableTime", lastThrowableTime);
         if ( lastThrowable!=null ) {
             json.addProperty("lastThrowable", StringUtil.throwable2string(lastThrowable));
+        }
+        if ( tradlet instanceof JsonEnabled ) {
+            json.add("concreteProps", ((JsonEnabled)tradlet).toJson());
         }
         return json;
     }

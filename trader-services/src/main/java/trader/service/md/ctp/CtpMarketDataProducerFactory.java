@@ -10,6 +10,7 @@ import trader.service.md.MarketDataProducer;
 import trader.service.md.MarketDataProducerFactory;
 
 @Discoverable(interfaceClass = MarketDataProducerFactory.class, purpose = MarketDataProducer.PROVIDER_CTP)
+@SuppressWarnings("rawtypes")
 public class CtpMarketDataProducerFactory implements MarketDataProducerFactory {
 
     @Override

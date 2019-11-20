@@ -14,15 +14,18 @@ import org.slf4j.LoggerFactory;
 import trader.common.beans.BeansContainer;
 import trader.common.config.ConfigUtil;
 import trader.common.util.ConversionUtil;
+import trader.common.util.TimestampSeqGen;
 import trader.service.md.MarketData;
 import trader.service.md.MarketDataService;
 import trader.service.trade.Account;
 import trader.service.trade.AccountImpl;
+import trader.service.trade.MarketTimeService;
 import trader.service.trade.OrderRefGen;
 import trader.service.trade.OrderRefGenImpl;
 import trader.service.trade.TradeService;
 import trader.service.trade.TxnSession;
 import trader.service.trade.TxnSessionFactory;
+import trader.service.trade.spi.AbsTxnSession;
 
 /**
  * 模拟成交服务
@@ -37,7 +40,9 @@ public class SimTradeService implements TradeService {
 
     private Map<String, TxnSessionFactory> txnSessionFactories = new HashMap<>();
 
-    private OrderRefGenImpl orderRefGen;
+    private TimestampSeqGen orderIdGen;
+
+    private OrderRefGen orderRefGen;
 
     private List<AccountImpl> accounts = new ArrayList<>();
 
@@ -46,7 +51,11 @@ public class SimTradeService implements TradeService {
     @Override
     public void init(BeansContainer beansContainer) throws Exception {
         this.beansContainer = beansContainer;
-        orderRefGen = new OrderRefGenImpl(beansContainer);
+        if ( orderRefGen==null ) {
+            orderRefGen = new OrderRefGenImpl(beansContainer);
+        }
+        MarketTimeService mtService = beansContainer.getBean(MarketTimeService.class);
+        orderIdGen = new TimestampSeqGen(mtService);
         MarketDataService mdService = beansContainer.getBean(MarketDataService.class);
         //接收行情, 异步更新账户的持仓盈亏
         mdService.addListener((MarketData md)->{
@@ -55,11 +64,14 @@ public class SimTradeService implements TradeService {
         //自动发现交易接口API
         txnSessionFactories = discoverTxnSessionProviders(beansContainer);
         loadAccounts();
+        connectTxnSessions(accounts);
     }
 
     @Override
     public void destroy() {
-
+        for(AccountImpl account:accounts) {
+            account.destroy();
+        }
     }
 
     @Override
@@ -67,9 +79,12 @@ public class SimTradeService implements TradeService {
         return Collections.unmodifiableMap(txnSessionFactories);
     }
 
-    @Override
     public OrderRefGen getOrderRefGen() {
         return orderRefGen;
+    }
+
+    public TimestampSeqGen getOrderIdGen() {
+        return orderIdGen;
     }
 
     @Override
@@ -92,20 +107,34 @@ public class SimTradeService implements TradeService {
         return Collections.unmodifiableCollection(accounts);
     }
 
+    public void setOrderRefMgr(OrderRefGen orderRefGen) {
+        this.orderRefGen = orderRefGen;
+    }
+
     private void loadAccounts() {
-        var accountElems = (List<Map>)ConfigUtil.getObject(ITEM_ACCOUNTS);
-        var allAccounts = new ArrayList<AccountImpl>();
+        List<Map> accountElems = (List<Map>)ConfigUtil.getObject(ITEM_ACCOUNTS);
+        List<AccountImpl> allAccounts = new ArrayList<>();
         if ( accountElems!=null ) {
             for (Map accountElem:accountElems) {
                 accountElem.put("provider", TxnSession.PROVIDER_SIM);
                 String id = ConversionUtil.toString(accountElem.get("id"));
-                var currAccount = createAccount(accountElem);
+                AccountImpl currAccount = createAccount(accountElem);
                 allAccounts.add(currAccount);
             }
         }
         this.accounts = allAccounts;
         if ( primaryAccount==null && !accounts.isEmpty()) {
             primaryAccount = accounts.get(0);
+        }
+    }
+
+    /**
+     * 启动完毕后, 连接交易通道
+     */
+    private void connectTxnSessions(List<AccountImpl> accountsToConnect) {
+        for(AccountImpl account:accountsToConnect) {
+            AbsTxnSession txnSession = (AbsTxnSession)account.getSession();
+            txnSession.connect(account.getConnectionProps());
         }
     }
 

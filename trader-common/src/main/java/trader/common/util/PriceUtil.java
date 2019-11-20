@@ -3,12 +3,54 @@ package trader.common.util;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
+import org.ta4j.core.num.Num;
+
+import trader.service.ta.LongNum;
+
 public class PriceUtil {
     public static final String MAX_STR = "N/A";
 
+    public static final long PRICE_SCALE = 10000;
+
+    /**
+     * 转换价格表示字符串到long值, 支持 4t, 3t格式.
+     */
+    public static long config2long(String str, long priceTick) {
+        long result = 0;
+        if ( str.toLowerCase().endsWith("t") ) {
+            result = ConversionUtil.toInt(str.substring(0, str.length() - 1)) * priceTick;
+        } else {
+            result = price2long(ConversionUtil.toDouble(str));
+        }
+        return result;
+    }
+
+    /**
+     * 是否合适的价格范围
+     */
+    public static boolean isValidPrice(long price) {
+        return price>0 && price<Long.MAX_VALUE;
+    }
+
+    /**
+     * 是否合适的价格范围
+     */
+    public static boolean isValidPrice(double price) {
+        return price!=0 && price!=Double.MAX_VALUE;
+    }
 
     public static double double2price(double value) {
         return long2price(price2long(value));
+    }
+
+    public static long num2long(Num num) {
+        long result = 0;
+        if ( num instanceof LongNum ) {
+            result = ((LongNum)num).rawValue();
+        }else {
+            result = price2long(num.doubleValue());
+        }
+        return result;
     }
 
     /**
@@ -31,7 +73,7 @@ public class PriceUtil {
         if ( l==Long.MAX_VALUE ) {
             return Double.MAX_VALUE;
         }
-        return ((double)l)/10000;
+        return ((double)l)/PRICE_SCALE;
     }
 
     public static long str2long(String price){
@@ -65,9 +107,9 @@ public class PriceUtil {
             builder.append("-");
             pl = -1*pl;
         }
-        builder.append( pl/10000 );
+        builder.append( pl/PRICE_SCALE );
         builder.append(".");
-        int ps = (int)Math.abs(pl%10000);
+        int ps = (int)Math.abs(pl%PRICE_SCALE);
         if ( ps==0 ){
             builder.append("0000");
         }else if ( ps<10 ){
@@ -135,27 +177,15 @@ public class PriceUtil {
         return text.toString();
          */
         BigDecimal bd = new BigDecimal(p);
-        bd = bd.divide(new BigDecimal(10000)).setScale(scale,RoundingMode.HALF_UP);
+        bd = bd.divide(new BigDecimal(PRICE_SCALE)).setScale(scale,RoundingMode.HALF_UP);
         return bd.toString();
     }
 
     /**
-     * =(p1-p2)/p2%
+     * 价格四舍五入到分
      */
-    public static double diff2percent(long diff, long base)
-    {
-        return (double)(diff*100)/(double)base;
+    public static long round(long price) {
+        return ((price+50)/100)*100;
     }
 
-    /**
-     * long 表示的百分比
-     */
-    public static long percent2long(long diff, long base){
-        double p = ((double)diff)/(double)base;
-        return price2long(p);
-    }
-
-    public static String percent2str(long percent){
-        return long2str(percent*100);
-    }
 }

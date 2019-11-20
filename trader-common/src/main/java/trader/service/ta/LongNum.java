@@ -11,13 +11,31 @@ import trader.common.util.PriceUtil;
  */
 public class LongNum implements Num {
     private static final long serialVersionUID = -6389115676116240242L;
-
+    /**
+     * 0
+     */
     public static final LongNum ZERO = new LongNum(0);
+    /**
+     * 1
+     */
+    public static final LongNum ONE = new LongNum(PriceUtil.price2long(1));
+    /**
+     * -1
+     */
+    public static final LongNum NEG_ONE = new LongNum(PriceUtil.price2long(-1));
+    /**
+     * 2
+     */
+    public static final LongNum TWO = new LongNum(PriceUtil.price2long(2));
+    /**
+     * -2
+     */
+    public static final LongNum NEG_TWO = new LongNum(PriceUtil.price2long(-2));
 
     private long value;
 
-    public LongNum(long value) {
-        this.value = value;
+    private LongNum(long rawValue) {
+        this.value = rawValue;
     }
 
     @Override
@@ -177,8 +195,38 @@ public class LongNum implements Num {
         return LongNum::valueOf;
     }
 
-    public static Num valueOf(Number i) {
+    public long rawValue() {
+        return value;
+    }
+
+    public static LongNum valueOf(String str) {
+        return new LongNum(PriceUtil.str2long(str));
+    }
+
+    public static LongNum valueOf(Number i) {
         return new LongNum(PriceUtil.price2long(i.doubleValue()));
+    }
+
+    public static LongNum fromRawValue(long rawValue) {
+        return new LongNum(rawValue);
+    }
+
+    public static LongNum fromNum(Num num) {
+        if ( num instanceof LongNum ) {
+            return (LongNum)num;
+        }else {
+            return new LongNum(PriceUtil.price2long(num.doubleValue()));
+        }
+    }
+
+    public boolean equals(Object obj) {
+        if ( obj==null ) {
+            return false;
+        }
+        if ( obj instanceof LongNum ) {
+            return ((LongNum)obj).value==value;
+        }
+        return toString().equals(obj.toString());
     }
 
     @Override

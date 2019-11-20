@@ -3,24 +3,24 @@ package trader.service.simulator;
 import static org.junit.Assert.assertTrue;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.Month;
 import java.util.concurrent.ScheduledExecutorService;
 
 import org.junit.Test;
 
 import trader.common.beans.BeansContainer;
-import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.Exchangeable;
-import trader.common.exchangeable.MarketDayUtil;
+import trader.common.exchangeable.ExchangeableTradingTimes;
 import trader.service.TraderHomeHelper;
 import trader.service.data.KVStoreService;
+import trader.service.log.LogServiceImpl;
 import trader.service.md.MarketDataService;
-import trader.service.ta.TAServiceImpl;
+import trader.service.ta.TechnicalAnalysisServiceImpl;
+import trader.service.trade.Account;
 import trader.service.trade.MarketTimeService;
 import trader.service.trade.TradeService;
 import trader.service.tradlet.TradletService;
-import trader.simulator.SimBeansContainer;
+import trader.service.util.SimpleBeansContainer;
 import trader.simulator.SimKVStoreService;
 import trader.simulator.SimMarketDataService;
 import trader.simulator.SimMarketTimeService;
@@ -33,27 +33,39 @@ import trader.simulator.trade.SimTradeService;
  */
 public class SimulatorTest {
     static {
-        TraderHomeHelper.init();
+        LogServiceImpl.setLogLevel("org.reflections", "ERROR");
+        LogServiceImpl.setLogLevel("org.apache.commons", "INFO");
+        LogServiceImpl.setLogLevel("trader", "INFO");
+        TraderHomeHelper.init(null);
     }
 
     @Test
     public void test_au1906() throws Exception
     {
-        LocalDateTime beginTime = LocalDateTime.of(2018, Month.DECEMBER, 28, 8, 50);
-        LocalDateTime endTime = LocalDateTime.of(2018, Month.DECEMBER, 28, 15, 04);
+        LogServiceImpl.setLogLevel("trader.service", "INFO");
+
         Exchangeable au1906 = Exchangeable.fromString("au1906");
-        BeansContainer beansContainer = initBeans(beginTime, endTime, au1906);
+        LocalDate tradingDay = LocalDate.of(2018, Month.DECEMBER, 28);
+        BeansContainer beansContainer = initBeans(au1906, tradingDay );
+        SimMarketTimeService mtService = beansContainer.getBean(SimMarketTimeService.class);
+        //时间片段循环
+        while(mtService.nextTimePiece());
+
+        TradeService tradeService = beansContainer.getBean(TradeService.class);
+        Account account = tradeService.getPrimaryAccount();
+        System.out.println(account);
+
     }
 
-    private static BeansContainer initBeans(LocalDateTime beginTime, LocalDateTime endTime, Exchangeable e) throws Exception
+    private static BeansContainer initBeans(Exchangeable e, LocalDate tradingDay) throws Exception
     {
-        SimBeansContainer beansContainer = new SimBeansContainer();
+        SimpleBeansContainer beansContainer = new SimpleBeansContainer();
         SimMarketTimeService mtService = new SimMarketTimeService();
         SimScheduledExecutorService scheduledExecutorService = new SimScheduledExecutorService();
         SimMarketDataService mdService = new SimMarketDataService();
         SimKVStoreService kvStoreService = new SimKVStoreService();
         SimTradeService tradeService = new SimTradeService();
-        TAServiceImpl taService = new TAServiceImpl();
+        TechnicalAnalysisServiceImpl taService = new TechnicalAnalysisServiceImpl();
         SimTradletService tradletService = new SimTradletService();
 
         beansContainer.addBean(MarketTimeService.class, mtService);
@@ -61,13 +73,13 @@ public class SimulatorTest {
         beansContainer.addBean(MarketDataService.class, mdService);
         beansContainer.addBean(KVStoreService.class, kvStoreService);
         beansContainer.addBean(TradeService.class, tradeService);
-        beansContainer.addBean(TAServiceImpl.class, taService);
+        beansContainer.addBean(TechnicalAnalysisServiceImpl.class, taService);
         beansContainer.addBean(TradletService.class, tradletService);
 
-        LocalDate tradingDay = MarketDayUtil.getTradingDay(Exchange.SHFE, beginTime);
         assertTrue(tradingDay!=null);
         scheduledExecutorService.init(beansContainer);
-        mtService.setTimeRange(tradingDay, beginTime, endTime);
+        ExchangeableTradingTimes tradingTimes = e.exchange().getTradingTimes(e, tradingDay);
+        mtService.setTimeRanges(tradingDay, tradingTimes.getMarketTimes() );
         mdService.init(beansContainer);
         taService.init(beansContainer);
         tradeService.init(beansContainer);

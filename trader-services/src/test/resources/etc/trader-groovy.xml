@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<root>
+    <MarketDataService>
+        <subscriptions>
+            ru1901
+        </subscriptions>
+    </MarketDataService>
+
+    <TradeService>
+        <account id="sim-account1" ><![CDATA[
+[connectionProps]
+initMoney=500000.00
+commissionsFile=${trader.home}/etc/sim-account1.commissions.json
+]]>
+        </account>
+    </TradeService>
+    <TAService>
+        <subscriptions>
+            ru
+        </subscriptions>
+    </TAService>
+    <TradletService>
+        <!-- 定义无法自动发现需要明确加载的Tradlet实现类名 -->
+        <tradlets><![CDATA[
+            trader.service.tradlet.impl.stop.StopLossTradlet
+            trader.service.tradlet.script.GroovyTradletImpl
+        ]]></tradlets>
+
+        <tradletGroup id="group_ru" ><![CDATA[
+#This is comment
+[common]
+state=disabled
+instruments=ru1901
+account=sim-account1
+
+[GROOVY]
+
+//初始化函数, 每次重新加载时都会调用
+def onInit(context){
+    println("Hello world from onInit()");
+}
+
+//当有新的KBAR时, 回调函数
+//HIGH, LOW, CLOSE, AVERAGE, VOLME, AMOUNT 标准变量代表上一个完整KBAR的值
+//当前支持的标准函数有: LLV/HHV/SMA/EMA/ABS/CROSS
+def onNewBar(series){
+    println("HIGH "+HIGH+" LOW "+LOW+" CLOSE "+CLOSE+" VOLUME "+VOLUME+" AMOUNT "+AMOUNT);
+
+    if ( ((HIGH-11260.0).getValue())==0 ){
+        println("\tHIGH "+HIGH+" == 11260.0");
+        println("\tHIGH "+HIGH+" + 11260 = "+(HIGH+11260.0));
+    }
+    if ( HIGH>=10950 ){
+        println("\tHIGH "+HIGH+" >= 10950");
+        println("\tHIGH "+HIGH+" + 11260 = "+(HIGH+11260.0));
+        println("\tHIGH "+HIGH+" - 11260 = "+(HIGH-11260.0));
+        println("\tHIGH "+HIGH+" * 10 = "+(HIGH*10));
+    }
+    println("HIGH+LOW "+(HIGH+LOW));
+    println("HIGH-LOW "+(HIGH-LOW));
+}
+
+        ]]></tradletGroup>
+    </TradletService>
+
+</root>

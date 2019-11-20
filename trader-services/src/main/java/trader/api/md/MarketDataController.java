@@ -1,12 +1,14 @@
 package trader.api.md;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import trader.api.ControllerConstants;
 import trader.common.exchangeable.Exchangeable;
@@ -26,36 +28,36 @@ public class MarketDataController {
     @RequestMapping(path=URL_PREFIX+"/producer",
             method=RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getProducers(){
-        return ResponseEntity.ok(JsonUtil.object2json(marketDataService.getProducers()).toString());
+    public String getProducers(@RequestParam(name="pretty", required=false) boolean pretty){
+        return (JsonUtil.json2str(JsonUtil.object2json(marketDataService.getProducers()), pretty));
     }
 
     @RequestMapping(path=URL_PREFIX+"/producer/{producerId}",
             method=RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getProducer(@PathVariable(value="producerId") String producerId){
+    public String getProducer(@PathVariable(value="producerId") String producerId, @RequestParam(name="pretty", required=false) boolean pretty){
 
         MarketDataProducer producer = marketDataService.getProducer(producerId);
         if ( producer==null ) {
-            return ResponseEntity.notFound().build();
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
-        return ResponseEntity.ok(producer.toJson().toString());
+        return (JsonUtil.json2str(producer.toJson(), pretty));
     }
 
     @RequestMapping(path=URL_PREFIX+"/subscriptions",
             method=RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getSubscriptions(){
-        return ResponseEntity.ok(JsonUtil.object2json(marketDataService.getSubscriptions()).toString());
+    public String getSubscriptions(@RequestParam(name="pretty", required=false) boolean pretty){
+        return (JsonUtil.json2str(JsonUtil.object2json(marketDataService.getSubscriptions()), pretty));
     }
 
-    @RequestMapping(path=URL_PREFIX+"/{exchangeableId}/lastData",
+    @RequestMapping(path=URL_PREFIX+"/last/{instrumentId}",
             method=RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> getExchangeableLastData(@PathVariable(value="exchangeableId") String exchangeableId){
-        Exchangeable e = Exchangeable.fromString(exchangeableId);
-        MarketData md = marketDataService.getLastData(e);
-        return ResponseEntity.ok(md.toJson().toString());
+    public String getInstrumentLastData(@PathVariable(value="instrumentId") String instrumentId, @RequestParam(name="pretty", required=false) boolean pretty){
+        Exchangeable instrument = Exchangeable.fromString(instrumentId);
+        MarketData md = marketDataService.getLastData(instrument);
+        return JsonUtil.json2str(JsonUtil.object2json(md), pretty);
     }
 
 }

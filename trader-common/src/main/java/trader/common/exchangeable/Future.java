@@ -2,6 +2,8 @@ package trader.common.exchangeable;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.Month;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.WeekFields;
 import java.util.ArrayList;
@@ -9,7 +11,10 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.gson.JsonObject;
+
 import trader.common.util.DateUtil;
+import trader.common.util.PriceUtil;
 import trader.common.util.StringUtil;
 
 /**
@@ -19,6 +24,8 @@ public class Future extends Exchangeable {
     public static final Pattern PATTERN = Pattern.compile("([a-zA-Z]+)(\\d+)");
     protected String commodity;
     protected String contract;
+    protected long priceTick;
+    protected int volumeMultiplier;
 
     public Future(Exchange exchange, String instrument) {
         this(exchange, instrument, instrument);
@@ -29,7 +36,7 @@ public class Future extends Exchangeable {
 
         Matcher matcher = PATTERN.matcher(instrument);
         if ( matcher.matches() ) {
-            commodity = ExchangeContract.detectCommodity(exchange, matcher.group(1));
+            commodity = exchange.canonicalCommodity(matcher.group(1));
             contract = matcher.group(2);
             //commodity大小写有变化, 修改id/name
             String newId = commodity+contract;
@@ -39,8 +46,14 @@ public class Future extends Exchangeable {
                 name = newId;
             }
         }else {
-            commodity = ExchangeContract.detectCommodity(exchange, instrument);
+            commodity = exchange.canonicalCommodity(instrument);
         }
+        ExchangeContract exchangeContract = exchange.matchContract(commodity);
+        if ( exchangeContract ==null ) {
+            throw new RuntimeException("Unknown future instrument "+instrument);
+        }
+        priceTick = PriceUtil.price2long(exchangeContract.getPriceTick());
+        volumeMultiplier = exchangeContract.getVolumeMultiplier();
     }
 
     /**
@@ -58,8 +71,14 @@ public class Future extends Exchangeable {
         return contract;
     }
 
-    public static Future fromInstrument(String uniqueId) {
-        return new Future(detectExchange(uniqueId), uniqueId);
+    @Override
+    public long getPriceTick() {
+        return priceTick;
+    }
+
+    @Override
+    public int getVolumeMutiplier() {
+        return volumeMultiplier;
     }
 
     public static Exchange detectExchange(String instrument) {
@@ -98,7 +117,7 @@ public class Future extends Exchangeable {
         if ( commodityName.indexOf(".")>0) {
             commodityName = commodityName.substring(commodityName.indexOf(".")+1);
         }
-        ExchangeContract contract = ExchangeContract.matchContract(exchange, commodityName);
+        ExchangeContract contract = exchange.matchContract(commodityName);
         if ( contract==null ) {
             throw new RuntimeException("No exchange contract info for "+ exchange + "." + commodityName);
         }
@@ -116,7 +135,9 @@ public class Future extends Exchangeable {
             marketDay = marketDay.minusDays(marketDay.getDayOfMonth() - 1);
         }
         if ( contract.getLastTradingDayOfMonth()>0 && marketDay.getDayOfMonth()>=contract.getLastTradingDayOfMonth() ) {
-
+            // Next month
+            marketDay = marketDay.plusMonths(1);
+            marketDay = marketDay.minusDays(marketDay.getDayOfMonth() - 1);
         }
 
         List<Future> result = new ArrayList<>();
@@ -126,67 +147,24 @@ public class Future extends Exchangeable {
         LocalDate ldt2 = marketDay.plus(1, ChronoUnit.MONTHS);
         String instrumentNextMonth = instrumentId(contract, commodityName,ldt2);
         // 下12月
-        List<String> next12Months = new ArrayList<>(12);
-        for (int i = 0; i <= 12; i++) {
-            LocalDate ldtn = marketDay.plus(i, ChronoUnit.MONTHS);
-            String instrumentNextMonthN = instrumentId(contract, commodityName,ldtn);
-            next12Months.add(instrumentNextMonthN);
-        }
-        // 1,3,5,7,8,9,11,12
-        List<String> next8In12Months = new ArrayList<>();
+        List<String> next12Months = instrumentsFromMonths(contract, commodityName, marketDay, new int[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+        List<String> next8In12Months = instrumentsFromMonths(contract, commodityName, marketDay, new int[] {1, 3, 5, 7, 8, 9, 11, 12});
+        List<String> next6OddMonths = instrumentsFromMonths(contract, commodityName, marketDay, new int[] {1, 3, 5, 7, 9, 11});
+        List<String> next1357Q4Months = instrumentsFromMonths(contract, commodityName, marketDay, new int[] {1, 3, 5, 7, 10, 11, 12});
+        List<String> next3And6BiMonths = new ArrayList<>();
         {
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(1, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(3, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(5, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(7, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(8, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(9, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(11, ChronoUnit.MONTHS)));
-            next8In12Months
-            .add(instrumentId(contract, commodityName, marketDay.plus(12, ChronoUnit.MONTHS)));
-        }
-        List<String> next6OddMonths = new ArrayList<>();
-        {
-            int marketMonth = marketDay.getMonth().getValue();
-            int monthAdjust = 0;
-            if (marketMonth%2==0){
-                monthAdjust=1;
+            LocalDate day2 = marketDay;
+            for(int i=0;i<3;i++) {
+                next3And6BiMonths.add( instrumentId(contract, commodityName, day2) );
+                day2 = day2.plusMonths(1);
             }
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust, ChronoUnit.MONTHS)));
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust+2, ChronoUnit.MONTHS)));
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust+4, ChronoUnit.MONTHS)));
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust+6, ChronoUnit.MONTHS)));
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust+8, ChronoUnit.MONTHS)));
-            next6OddMonths
-            .add(instrumentId(contract, commodityName, marketDay.plus(monthAdjust+10, ChronoUnit.MONTHS)));
-        }
-        List<String> next1357Q4Months = new ArrayList<>();
-        {
-            for(int i=1;i<=12;i++) {
-                LocalDate month = marketDay.plus(i, ChronoUnit.MONTHS);
-                int marketMonth = month.getMonth().getValue();
-                switch(marketMonth) {
-                case 1:
-                case 3:
-                case 5:
-                case 7:
-                case 10:
-                case 11:
-                case 12:
-                    next1357Q4Months.add(instrumentId(contract, commodityName, month));
-                    break;
+            int biMonths = 0;
+            while(biMonths<=6) {
+                day2 = day2.plusMonths(1);
+                int monthOfYear = day2.getMonth().get(ChronoField.MONTH_OF_YEAR);
+                if ( monthOfYear%2 ==0 ) {
+                    next3And6BiMonths.add( instrumentId(contract, commodityName, day2) );
+                    biMonths++;
                 }
             }
         }
@@ -200,9 +178,25 @@ public class Future extends Exchangeable {
         String instrumentNextQuarter = instrumentId(contract, commodityName,ldt4);
         // 隔季
         LocalDate ldt5 = ldt4.plus(3, ChronoUnit.MONTHS);
-        String instrumentNextQuarter2 = instrumentId(contract, commodityName,ldt5);
+        String instrumentNextQuarter2 = instrumentId(contract, commodityName, ldt5);
+        // 12个月后的8个季度
+        LocalDate ldt6 = ldt3.plus(12, ChronoUnit.MONTHS);
+        List<String> next8QuartersAfter12Months = new ArrayList<>();
+        while(true) {
+            ldt6 = ldt6.plusMonths(1);
+            if ( isQuarterMonth(ldt6.getMonth())) {
+                next8QuartersAfter12Months.add( instrumentId(contract, commodityName, ldt6) );
+            }
+            if ( next8QuartersAfter12Months.size()>=8 ) {
+                break;
+            }
+        }
 
         for (String instrument : contract.getInstruments()) {
+            if ( instrument.indexOf(",")>0) {
+                result.addAll(genInstrumentFromMonths(exchange, contract, commodityName, marketDay));
+                continue;
+            }
             switch (instrument) {
             case "ThisMonth":
                 result.add(new Future(exchange, InstrumentThisMonth));
@@ -239,8 +233,72 @@ public class Future extends Exchangeable {
                     result.add(new Future(exchange, n));
                 }
                 break;
+            case "Next12MonthsAnd8Quarters":
+                for (String n : next12Months) {
+                    result.add(new Future(exchange, n));
+                }
+                for (String n : next8QuartersAfter12Months) {
+                    result.add(new Future(exchange, n));
+                }
+                break;
+            case "Next3And6BiMonths":{
+                for (String n : next3And6BiMonths) {
+                    result.add(new Future(exchange, n));
+                }
+                break;
+            }
             default:
                 throw new RuntimeException("Unsupported commodity name: " + commodityName);
+            }
+        }
+        return result;
+    }
+
+    private static List<String> instrumentsFromMonths(ExchangeContract contract, String commodityName, LocalDate marketDay, int[] months){
+        List<Integer> monthList = new ArrayList<>();
+        for(int m:months) {
+            monthList.add(m);
+        }
+        List<String> result = new ArrayList<>();
+        for(int i=0; i<=12;i++) {
+            LocalDate month = marketDay.plus(i, ChronoUnit.MONTHS);
+            if ( monthList.contains(month.getMonth().getValue())) {
+                boolean afterLastTradingDay = false;
+                if ( marketDay.equals(month) && contract.isAfterLastTradingDay(month)) {
+                    afterLastTradingDay = true;
+                }
+                if ( !afterLastTradingDay ) {
+                    result.add(instrumentId(contract, commodityName, month));
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 从月份生成
+     */
+    private static List<Future> genInstrumentFromMonths(Exchange exchange, ExchangeContract contract, String commodityName, LocalDate marketDay){
+        List<Future> result = new ArrayList<>();
+
+        if ( contract.getLastTradingDayOfMonth()>0 && marketDay.getDayOfMonth()<contract.getLastTradingDayOfMonth() ) {
+            result.add(new Future(exchange, instrumentId(contract, commodityName, marketDay)));
+        }
+        List<String> months = new ArrayList<>();
+        for(String instruments:contract.getInstruments()) {
+            String[] monthStrs = StringUtil.split(instruments, ",");
+            for(String month:monthStrs) {
+                months.add(month);
+            }
+        }
+        for(int i=1;i<=12;i++) {
+            LocalDate month = marketDay.plus(i, ChronoUnit.MONTHS);
+            int marketMonth = month.getMonth().getValue();
+            if ( months.contains(""+marketMonth)) {
+                result.add(new Future(exchange, instrumentId(contract, commodityName, month)));
+            }
+            if ( result.size()>=months.size()) {
+                break;
             }
         }
         return result;
@@ -250,7 +308,7 @@ public class Future extends Exchangeable {
         String result = instrument;
         Matcher matcher = PATTERN.matcher(instrument);
         if ( matcher.matches() ) {
-            String commodity = ExchangeContract.detectCommodity(exchange, matcher.group(1));
+            String commodity = exchange.canonicalCommodity(matcher.group(1));
             String contract = matcher.group(2);
             result = commodity+contract;
         }
@@ -275,11 +333,36 @@ public class Future extends Exchangeable {
         List<Future> allExchangeables = new ArrayList<>(100);
         for(Exchange exchange:Exchange.getInstances()) {
             if ( exchange.isFuture()) {
-                for(String commodity: ExchangeContract.getContractNames(exchange)) {
+                for(String commodity: exchange.getContractNames()) {
                     allExchangeables.addAll( Future.instrumentsFromMarketDay(LocalDate.now(), commodity) );
                 }
             }
         }
         return allExchangeables;
+    }
+
+    private static class PrimaryInstrument{
+        Future instrument;
+        LocalDate beginDate;
+        LocalDate endDate;
+
+        PrimaryInstrument(JsonObject json){
+            this.instrument = (Future)Exchangeable.fromString(json.get("instrument").getAsString());
+            String[] dateRange = StringUtil.split(json.get("dateRange").getAsString(), "-");
+            beginDate = DateUtil.str2localdate(dateRange[0]);
+            endDate = DateUtil.str2localdate(dateRange[1]);
+        }
+    }
+
+    private static boolean isQuarterMonth(Month month) {
+        switch(month) {
+        case MARCH: //3
+        case JUNE: //6
+        case SEPTEMBER: //9
+        case DECEMBER: //12
+            return true;
+        default:
+            return false;
+        }
     }
 }

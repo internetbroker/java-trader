@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -13,7 +14,8 @@ import trader.common.util.JsonUtil;
 
 public class OrderImpl implements Order, JsonEnabled {
 
-    protected Exchangeable exchangeable;
+    protected String id;
+    protected Exchangeable instrument;
     protected String ref;
     protected OrderDirection direction;
     protected long limitPrice;
@@ -25,20 +27,22 @@ public class OrderImpl implements Order, JsonEnabled {
     protected PositionImpl position;
     protected List<Transaction> transactions = new ArrayList<>();
     private Properties attrs;
-    protected long money[] = new long[OdrMoney_Count];
-    protected int[] volumes = new int[OdrVolume_Count];
+    protected long money[] = new long[OdrMoney.values().length];
+    protected int[] volumes = new int[OdrVolume.values().length];
     protected OrderListener listener;
 
-    public OrderImpl(String ref, OrderBuilder builder, OrderStateTuple stateTuple)
+    public OrderImpl(String id, String ref, OrderBuilder builder, OrderStateTuple stateTuple)
     {
+        this.id = id;
         this.ref = ref;
-        exchangeable = builder.getExchangeable();
+        instrument = builder.getInstrument();
         this.listener = builder.getListener();
 
+        this.direction = builder.getDirection();
         this.priceType = builder.getPriceType();
         this.offsetFlag = builder.getOffsetFlag();
         this.limitPrice = builder.getLimitPrice();
-        addVolume(OdrVolume_ReqVolume, builder.getVolume());
+        addVolume(OdrVolume.ReqVolume, builder.getVolume());
         this.volumeCondition = builder.getVolumeCondition();
         this.attrs = builder.getAttrs();
 
@@ -51,13 +55,17 @@ public class OrderImpl implements Order, JsonEnabled {
     }
 
     @Override
-    public Exchangeable getExchangeable() {
-        return exchangeable;
+    public Exchangeable getInstrument() {
+        return instrument;
     }
 
     @Override
     public OrderListener getListener() {
         return listener;
+    }
+
+    public String getId() {
+        return id;
     }
 
     @Override
@@ -101,8 +109,8 @@ public class OrderImpl implements Order, JsonEnabled {
     }
 
     @Override
-    public long getMoney(int index) {
-        return money[index];
+    public long getMoney(OdrMoney mny) {
+        return money[mny.ordinal()];
     }
 
     @Override
@@ -113,24 +121,24 @@ public class OrderImpl implements Order, JsonEnabled {
     }
 
     @Override
-    public int getVolume(int index) {
-        return volumes[index];
+    public int getVolume(OdrVolume vol) {
+        return volumes[vol.ordinal()];
     }
 
-    public int addVolume(int index, int volume) {
-        volumes[index] += volume;
-        return volumes[index];
+    public int addVolume(OdrVolume vol, int volume) {
+        volumes[vol.ordinal()] += volume;
+        return volumes[vol.ordinal()];
     }
 
-    public long setMoney(int index, long newValue) {
-        long result = money[index];
-        money[index] = newValue;
+    public long setMoney(OdrMoney mny, long newValue) {
+        long result = money[mny.ordinal()];
+        money[mny.ordinal()] = newValue;
         return result;
     }
 
-    public long addMoney(int index, long toadd) {
-        long result = money[index];
-        money[index] += toadd;
+    public long addMoney(OdrMoney mny, long toadd) {
+        long result = money[mny.ordinal()];
+        money[mny.ordinal()] += toadd;
         return result;
     }
 
@@ -165,7 +173,8 @@ public class OrderImpl implements Order, JsonEnabled {
     @Override
     public JsonElement toJson() {
         JsonObject json = new JsonObject();
-        json.addProperty("exchangeable", exchangeable.id());
+        json.addProperty("instrument", instrument.id());
+        json.addProperty("id", id);
         json.addProperty("ref", ref);
         json.addProperty("direction", direction.name());
         json.addProperty("limitPrice", limitPrice);
@@ -179,6 +188,13 @@ public class OrderImpl implements Order, JsonEnabled {
         }
         json.add("money", TradeConstants.odrMoney2json(money));
         json.add("volumes", TradeConstants.odrVolume2json(volumes));
+        if( !transactions.isEmpty()) {
+            JsonArray txnIds = new JsonArray();
+            for(Transaction txn:transactions) {
+                txnIds.add(txn.getId());
+            }
+            json.add("txnIds", txnIds);
+        }
         return json;
     }
 
@@ -228,7 +244,8 @@ public class OrderImpl implements Order, JsonEnabled {
      */
     boolean attachTransaction(Transaction txn, long[] txnFees, long timestamp) {
         boolean txnAccepted = true;
-        if ( lastState.getState().isDone() ) {
+        int txnVolume = txn.getVolume();
+        if ( (getVolume(OdrVolume.ReqVolume)-getVolume(OdrVolume.TradeVolume))<txnVolume ) {
             txnAccepted = false;
         }
 
@@ -236,10 +253,9 @@ public class OrderImpl implements Order, JsonEnabled {
             return false;
         }
         transactions.add(txn);
-        int txnVolume = txn.getVolume();
-        int tradeVolume = addVolume(OdrVolume_TradeVolume, txnVolume);
+        int tradeVolume = addVolume(OdrVolume.TradeVolume, txnVolume);
         boolean stateChangedToComplete = false;
-        if ( getVolume(OdrVolume_ReqVolume) == tradeVolume ) {
+        if ( getVolume(OdrVolume.ReqVolume) == tradeVolume ) {
             //全部成交, 切换状态到Complete
             changeState(new OrderStateTuple(OrderState.Complete, OrderSubmitState.Accepted, timestamp, null));
             stateChangedToComplete = true;
@@ -255,10 +271,10 @@ public class OrderImpl implements Order, JsonEnabled {
             //如果是平仓, 需要扣除冻结仓位
             if ( txn.getDirection()==OrderDirection.Sell ) {
                 //平多
-                addVolume(OdrVolume_LongUnfrozen, txnVolume);
+                addVolume(OdrVolume.LongUnfrozen, txnVolume);
             } else {
                 //平空
-                addVolume(OdrVolume_ShortUnfrozen, txnVolume);
+                addVolume(OdrVolume.ShortUnfrozen, txnVolume);
             }
             //平仓只在Position中调整保证金
             break;
@@ -271,22 +287,22 @@ public class OrderImpl implements Order, JsonEnabled {
                 Transaction txn0 = transactions.get(i);
                 totalCost += txn0.getPrice()*txn0.getVolume();
             }
-            setMoney(OdrMoney_OpenCost, totalCost/tradeVolume);
+            setMoney(OdrMoney.OpenCost, totalCost/tradeVolume);
 
             //调整保证金
-            addMoney(OdrMoney_LocalUsedMargin, txnFees[0]);
-            if ( addMoney(OdrMoney_LocalUnfrozenMargin, txnFees[0]) >  getMoney(OdrMoney_LocalFrozenMargin)) {
-                setMoney(OdrMoney_LocalUnfrozenMargin, getMoney(OdrMoney_LocalFrozenMargin));
+            addMoney(OdrMoney.LocalUsedMargin, txnFees[0]);
+            if ( addMoney(OdrMoney.LocalUnfrozenMargin, txnFees[0]) >  getMoney(OdrMoney.LocalFrozenMargin)) {
+                setMoney(OdrMoney.LocalUnfrozenMargin, getMoney(OdrMoney.LocalFrozenMargin));
             }
 
         }
         //调整手续费
-        addMoney(OdrMoney_LocalUsedCommission, txnFees[1]);
-        addMoney(OdrMoney_LocalUnfrozenCommission, txnFees[1]);
+        addMoney(OdrMoney.LocalUsedCommission, txnFees[1]);
+        addMoney(OdrMoney.LocalUnfrozenCommission, txnFees[1]);
         if ( stateChangedToComplete ) {
             //报单完成, 更新资金变动
-            setMoney(OdrMoney_LocalUnfrozenMargin, getMoney(OdrMoney_LocalFrozenMargin));
-            setMoney(OdrMoney_LocalUnfrozenCommission, getMoney(OdrMoney_LocalFrozenCommission));
+            setMoney(OdrMoney.LocalUnfrozenMargin, getMoney(OdrMoney.LocalFrozenMargin));
+            setMoney(OdrMoney.LocalUnfrozenCommission, getMoney(OdrMoney.LocalFrozenCommission));
         }
         return true;
     }

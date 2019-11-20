@@ -14,17 +14,20 @@ import trader.common.beans.BeansContainer;
 public class RocksDBStore extends AbsKVStoreProvider {
     private final static Logger logger = LoggerFactory.getLogger(RocksDBStore.class);
 
+    private String id;
     private String path;
     private RocksDB db;
 
     public RocksDBStore(String path) {
+        this.id = "rocksDb";
         this.path = path;
     }
 
     @Override
     public void init(BeansContainer beansContainer) throws Exception
     {
-        File rocksdbDir = (new File(path,"rocksdb")).getAbsoluteFile();
+        super.init(beansContainer);
+        File rocksdbDir = new File(path).getAbsoluteFile();
         rocksdbDir.mkdirs();
         db = RocksDB.open(rocksdbDir.getAbsolutePath());
         logger.info("RocksDB kvstore is open on "+rocksdbDir);
@@ -35,6 +38,10 @@ public class RocksDBStore extends AbsKVStoreProvider {
         if ( null!=db ) {
             db.close();
         }
+    }
+
+    public String getId() {
+        return id;
     }
 
     @Override
@@ -55,9 +62,20 @@ public class RocksDBStore extends AbsKVStoreProvider {
         }
     }
 
+    public void delete(byte[] key) {
+        try{
+            db.delete(key);
+        }catch(Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
     public KVStoreIterator iterator() {
         return new RocksDBStoreIterator(db.newIterator());
     }
 
+    public String toString() {
+        return "RocksDBStore["+path+"]";
+    }
 }

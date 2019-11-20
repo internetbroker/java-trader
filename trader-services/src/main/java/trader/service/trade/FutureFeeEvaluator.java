@@ -8,6 +8,9 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.TreeSet;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -23,17 +26,13 @@ import trader.common.util.StringUtil;
  * 期货保证金占用, 手续费计算
  */
 public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
-
-    private static final int PriceType_Last = 0;
-    private static final int PriceType_Highest = 1;
-    private static final int PriceType_Lowest = 2;
-
+    private final static Logger logger = LoggerFactory.getLogger(FutureFeeEvaluator.class);
 
     public static class FutureFeeInfo implements JsonEnabled {
         private long priceTick;
         private int volumeMultiple;
-        private double[] marginRatios = new double[MarginRatio_Count];
-        private double[] commissionRatios = new double[CommissionRatio_Count];
+        private double[] marginRatios = new double[MarginRatio.values().length];
+        private double[] commissionRatios = new double[CommissionRatio.values().length];
 
         public long getPriceTick() {
             return priceTick;
@@ -44,22 +43,22 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
         }
 
         /**
-         * @see TradeConstants#MarginRatio_LongByMoney
-         * @see TradeConstants#MarginRatio_LongByVolume
-         * @see TradeConstants#MarginRatio_ShortByMoney
-         * @see TradeConstants#MarginRatio_ShortByVolume
+         * @see TradeConstants#MarginRatio.LongByMoney
+         * @see TradeConstants#MarginRatio.LongByVolume
+         * @see TradeConstants#MarginRatio.ShortByMoney
+         * @see TradeConstants#MarginRatio.ShortByVolume
          */
         public double getMarginRatio(int idx) {
             return marginRatios[idx];
         }
 
         /**
-         * @see TradeConstants#CommissionRatio_OpenByMoney
-         * @see TradeConstants#CommissionRatio_OpenByVolume
-         * @see TradeConstants#CommissionRatio_CloseByMoney
-         * @see TradeConstants#CommissionRatio_CloseByVolume
-         * @see TradeConstants#CommissionRatio_CloseTodayByMoney
-         * @see TradeConstants#CommissionRatio_CloseTodayByVolume
+         * @see TradeConstants#CommissionRatio.OpenByMoney
+         * @see TradeConstants#CommissionRatio.OpenByVolume
+         * @see TradeConstants#CommissionRatio.CloseByMoney
+         * @see TradeConstants#CommissionRatio.CloseByVolume
+         * @see TradeConstants#CommissionRatio.CloseTodayByMoney
+         * @see TradeConstants#CommissionRatio.CloseTodayByVolume
          */
         public double getCommissionRatio(int idx) {
             return commissionRatios[idx];
@@ -92,6 +91,9 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
         }
 
         public static FutureFeeInfo fromJson(double brokerMarginRatio, JsonObject json) {
+            if ( !json.has("commissionRatios") || !json.has("marginRatios") ) {
+                return null;
+            }
             FutureFeeInfo result = new FutureFeeInfo();
             result.priceTick = PriceUtil.str2long(json.get("priceTick").getAsString());
             result.volumeMultiple = ConversionUtil.toInt(json.get("volumeMultiple").getAsString());
@@ -125,10 +127,20 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
     {
         this.brokerMarginRatio = brokerMarginRatio;
         this.feeInfos = feeInfos;
+        for(Exchangeable e:feeInfos.keySet()) {
+            long feePriceTick = feeInfos.get(e).priceTick;
+            if ( e.getPriceTick()!= feePriceTick)  {
+                logger.error("Exchangeable "+e+" priceTick "+PriceUtil.long2str(e.getPriceTick())+" is WRONG, expected value is "+PriceUtil.long2str(feePriceTick));
+            }
+            long feeVolumeMutiplier = feeInfos.get(e).volumeMultiple;
+            if ( e.getVolumeMutiplier()!=feeVolumeMutiplier) {
+                logger.error("Exchangeable "+e+" volumeMultiple "+(e.getVolumeMutiplier())+" is WRONG, expected value is "+feeVolumeMutiplier);
+            }
+        }
     }
 
     @Override
-    public Collection<Exchangeable> getExchangeables(){
+    public Collection<Exchangeable> getInstruments(){
         return feeInfos.keySet();
     }
 
@@ -148,7 +160,7 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
 
     @Override
     public long[] compute(Transaction txn) {
-        return compute(txn.getOrder().getExchangeable(), txn.getVolume(), txn.getPrice(), txn.getDirection(), txn.getOffsetFlags());
+        return compute(txn.getOrder().getInstrument(), txn.getVolume(), txn.getPrice(), txn.getDirection(), txn.getOffsetFlags());
     }
 
     @Override
@@ -161,13 +173,13 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
         long margin=0, commission=0;
         {//保证金
             if ( direction==OrderDirection.Buy ) {
-                double longByMoney = feeInfo.marginRatios[MarginRatio_LongByMoney];
-                double longByVolume = feeInfo.marginRatios[MarginRatio_LongByVolume];
+                double longByMoney = feeInfo.marginRatios[MarginRatio.LongByMoney.ordinal()];
+                double longByVolume = feeInfo.marginRatios[MarginRatio.LongByVolume.ordinal()];
                 long marginByMoney = (long)(longByMoney*turnover);
                 margin = marginByMoney;
             }else {
-                double shortByMoney = feeInfo.marginRatios[MarginRatio_ShortByMoney];
-                double shortByVolume = feeInfo.marginRatios[MarginRatio_ShortByVolume];
+                double shortByMoney = feeInfo.marginRatios[MarginRatio.ShortByMoney.ordinal()];
+                double shortByVolume = feeInfo.marginRatios[MarginRatio.ShortByVolume.ordinal()];
                 long marginByMoney = (long)(shortByMoney*turnover);
                 margin = marginByMoney;
             }
@@ -175,24 +187,27 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
         {//手续费
             switch(offsetFlag) {
             case OPEN:
-                long openMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio_OpenByMoney] );
-                long openVolume = (long)( volume*feeInfo.commissionRatios[CommissionRatio_OpenByVolume] );
+                long openMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio.OpenByMoney.ordinal()] );
+                long openVolume = PriceUtil.price2long( volume*feeInfo.commissionRatios[CommissionRatio.OpenByVolume.ordinal()] );
                 commission = (openMoney+openVolume);
                 break;
             case CLOSE:
             case CLOSE_YESTERDAY:
             case FORCE_CLOSE:
-                long closeMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio_CloseByMoney] );
-                long closeVolume = (long)( volume*feeInfo.commissionRatios[CommissionRatio_CloseByVolume] );
+                long closeMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio.CloseByMoney.ordinal()] );
+                long closeVolume = PriceUtil.price2long( volume*feeInfo.commissionRatios[CommissionRatio.CloseByVolume.ordinal()] );
                 commission = closeMoney+closeVolume;
                 break;
             case CLOSE_TODAY:
-                long closeTodayMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio_CloseTodayByMoney] );
-                long closeTodayVolume = (long)( volume*feeInfo.commissionRatios[CommissionRatio_CloseTodayByVolume] );
+                long closeTodayMoney = (long)( turnover*feeInfo.commissionRatios[CommissionRatio.CloseTodayByMoney.ordinal()] );
+                long closeTodayVolume = PriceUtil.price2long( volume*feeInfo.commissionRatios[CommissionRatio.CloseTodayByVolume.ordinal()] );
                 commission = closeTodayMoney+closeTodayVolume;
                 break;
             }
         }
+        margin = PriceUtil.round(margin);
+        commission = PriceUtil.round(commission);
+        turnover = PriceUtil.round(turnover);
         return  new long[] {margin, commission, turnover};
     }
 
@@ -207,21 +222,23 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
         switch(direction) {
         case Long:
             {
-                double longByMoney = feeInfo.marginRatios[MarginRatio_LongByMoney];
-                double longByVolume = feeInfo.marginRatios[MarginRatio_LongByVolume];
+                double longByMoney = feeInfo.marginRatios[MarginRatio.LongByMoney.ordinal()];
+                double longByVolume = feeInfo.marginRatios[MarginRatio.LongByVolume.ordinal()];
                 long marginByMoney = (long)(longByMoney*turnover);
                 margin = marginByMoney;
                 break;
             }
         default:
             {
-                double shortByMoney = feeInfo.marginRatios[MarginRatio_ShortByMoney];
-                double shortByVolume = feeInfo.marginRatios[MarginRatio_ShortByVolume];
+                double shortByMoney = feeInfo.marginRatios[MarginRatio.ShortByMoney.ordinal()];
+                double shortByVolume = feeInfo.marginRatios[MarginRatio.ShortByVolume.ordinal()];
                 long marginByMoney = (long)(shortByMoney*turnover);
                 margin = marginByMoney;
                 break;
             }
         }
+        margin = PriceUtil.round(margin);
+        turnover = PriceUtil.round(turnover);
         return new long[] {margin, turnover};
     }
 
@@ -258,7 +275,9 @@ public class FutureFeeEvaluator implements TxnFeeEvaluator, TradeConstants {
             Exchangeable e=Exchangeable.fromString(key);
             JsonObject feeJson = (JsonObject)feeInfos.get(key);
             FutureFeeInfo feeInfo = FutureFeeInfo.fromJson(resolveBrokerMarginRatio(e , brokerMarginRatio), feeJson);
-            result.put(e, feeInfo);
+            if ( feeInfo!=null ) {
+                result.put(e, feeInfo);
+            }
         }
 
         return new FutureFeeEvaluator(brokerMarginRatio, result);

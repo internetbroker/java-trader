@@ -1,5 +1,6 @@
 package trader.service.md;
 
+import java.io.File;
 import java.net.URL;
 import java.net.URLConnection;
 import java.time.LocalDate;
@@ -35,12 +36,15 @@ import trader.common.beans.ServiceState;
 import trader.common.config.ConfigService;
 import trader.common.config.ConfigUtil;
 import trader.common.exception.AppException;
+import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.Exchangeable;
 import trader.common.exchangeable.Future;
 import trader.common.util.ConversionUtil;
 import trader.common.util.DateUtil;
+import trader.common.util.FileUtil;
 import trader.common.util.IOUtil;
 import trader.common.util.StringUtil;
+import trader.common.util.TraderHomeUtil;
 import trader.service.ServiceConstants.ConnState;
 import trader.service.ServiceErrorCodes;
 import trader.service.event.AsyncEvent;
@@ -49,8 +53,11 @@ import trader.service.event.AsyncEventService;
 import trader.service.md.ctp.CtpMarketDataProducerFactory;
 import trader.service.md.spi.AbsMarketDataProducer;
 import trader.service.md.spi.MarketDataProducerListener;
+import trader.service.md.web.WebMarketDataProducerFactory;
 import trader.service.plugin.Plugin;
 import trader.service.plugin.PluginService;
+import trader.service.stats.StatsCollector;
+import trader.service.trade.MarketTimeService;
 
 /**
  * 行情数据的接收和聚合
@@ -81,6 +88,9 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     private BeansContainer beansContainer;
 
     @Autowired
+    private StatsCollector statsCollector;
+
+    @Autowired
     private ConfigService configService;
 
     @Autowired
@@ -91,6 +101,9 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
 
     @Autowired
     private AsyncEventService asyncEventService;
+
+    @Autowired
+    private MarketTimeService mtService;
 
     private volatile boolean reloadInProgress = false;
 
@@ -103,6 +116,10 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     private Map<String, MarketDataProducerFactory> producerFactories;
 
     private List<Exchangeable> primaryInstruments = new ArrayList<>();
+    /**
+     * 每个品种的持仓量前3的主力合约
+     */
+    private List<Exchangeable> primaryInstruments2 = new ArrayList<>();
 
     /**
      * 采用copy-on-write多线程访问方式，可以不使用锁
@@ -122,8 +139,7 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     public void init(BeansContainer beansContainer) {
         state = ServiceState.Starting;
         producerFactories = discoverProducerProviders(beansContainer);
-        //查询主力合约
-        primaryInstruments = new ArrayList<>(queryPrimaryContracts());
+        queryOrLoadPrimaryInstruments();
         List<Exchangeable> allInstruments = reloadSubscriptions(Collections.emptyList(), null);
         logger.info("Subscrible instruments: "+allInstruments);
 
@@ -191,13 +207,38 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     }
 
     @Override
-    public Collection<Exchangeable> getPrimaryContracts(){
+    public Collection<Exchangeable> getPrimaryInstruments(){
         return Collections.unmodifiableCollection(primaryInstruments);
     }
 
     @Override
+    public Exchangeable getPrimaryInstrument(Exchange exchange, String commodity) {
+        int occurence=0;
+        char cc = commodity.charAt(commodity.length()-1);
+        if ( cc>='0' && cc<='9') {
+            occurence = cc-'0';
+            commodity = commodity.substring(0, commodity.length()-1);
+        }
+        if ( exchange==null ) {
+            exchange = Future.detectExchange(commodity);
+        }
+        int instrumentOccurence=0;
+        Exchangeable primaryInstrument=null;
+        for(Exchangeable pi:primaryInstruments) {
+            if ( pi.exchange()==exchange && pi.commodity().equalsIgnoreCase(commodity) ) {
+                instrumentOccurence++;
+                if ( instrumentOccurence>=occurence ) {
+                    primaryInstrument = pi;
+                    break;
+                }
+            }
+        }
+        return primaryInstrument;
+    }
+
+    @Override
     public Collection<MarketDataProducer> getProducers() {
-        var result = new LinkedList<MarketDataProducer>();
+        List<MarketDataProducer> result = new LinkedList<>();
         result.addAll(producers.values());
         return result;
     }
@@ -226,7 +267,7 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
                     continue;
                 }
                 newSubscriptions.add(e);
-                createListenerHolder(e, newSubscriptions);
+                getOrCreateListenerHolder(e, newSubscriptions);
             }
         }finally {
             listenerHolderLock.writeLock().unlock();
@@ -242,15 +283,15 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     }
 
     @Override
-    public void addListener(MarketDataListener listener, Exchangeable... exchangeables) {
+    public void addListener(MarketDataListener listener, Exchangeable... instruments) {
         List<Exchangeable> subscribes = new ArrayList<>();
         try {
             listenerHolderLock.writeLock().lock();
-            if ( exchangeables==null || exchangeables.length==0 || (exchangeables.length==1&&exchangeables[0]==null) ){
+            if ( instruments==null || instruments.length==0 || (instruments.length==1&&instruments[0]==null) ){
                 genericListeners.add(listener);
             } else {
-                for(Exchangeable exchangeable:exchangeables) {
-                    MarketDataListenerHolder holder = createListenerHolder(exchangeable, subscribes);
+                for(Exchangeable exchangeable:instruments) {
+                    MarketDataListenerHolder holder = getOrCreateListenerHolder(exchangeable, subscribes);
                     holder.addListener(listener);
                 }
             }
@@ -271,25 +312,33 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     @Override
     public boolean onEvent(AsyncEvent event)
     {
-        MarketData md = (MarketData)event.data;
-        MarketDataListenerHolder holder= listenerHolders.get(md.instrumentId);
-        if ( null!=holder && holder.checkTimestamp(md.updateTimestamp) ) {
-            holder.lastData = md;
+        MarketData tick = (MarketData)event.data;
+        //如果行情时间和系统时间差距超过2小时, 忽略.
+        if ( Math.abs(mtService.currentTimeMillis()-tick.updateTimestamp)>= 2*3600*1000 ) {
+            if ( logger.isDebugEnabled()) {
+                logger.debug("Ignore market data: "+tick);
+            }
+            return true;
+        }
+        MarketDataListenerHolder holder= listenerHolders.get(tick.instrument);
+        if ( null!=holder && holder.checkTick(tick) ) {
+            holder.lastData = tick;
+            tick.postProcess(holder.getTradingTimes());
             //通用Listener
             for(int i=0;i<genericListeners.size();i++) {
                 try{
-                    genericListeners.get(i).onMarketData(md);
+                    genericListeners.get(i).onMarketData(tick);
                 }catch(Throwable t) {
-                    logger.error("Marketdata listener "+genericListeners.get(i)+" process failed: "+md,t);
+                    logger.error("Marketdata listener "+genericListeners.get(i)+" process failed: "+tick,t);
                 }
             }
             //特有的listeners
             List<MarketDataListener> listeners = holder.getListeners();
             for(int i=0;i<listeners.size();i++) {
                 try {
-                    listeners.get(i).onMarketData(md);
+                    listeners.get(i).onMarketData(tick);
                 }catch(Throwable t) {
-                    logger.error("Marketdata listener "+listeners.get(i)+" process failed: "+md,t);
+                    logger.error("Marketdata listener "+listeners.get(i)+" process failed: "+tick,t);
                 }
             }
         }
@@ -303,10 +352,10 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     public void onStateChanged(AbsMarketDataProducer producer, ConnState oldStatus) {
         switch(producer.getState()) {
         case Connected:
-            Collection<Exchangeable> exchangeables = getSubscriptions();
-            if ( exchangeables.size()>0 ) {
+            Collection<Exchangeable> instruments = getSubscriptions();
+            if ( instruments.size()>0 ) {
                 executorService.execute(()->{
-                    producer.subscribe(exchangeables);
+                    producer.subscribe(instruments);
                 });
             }
             break;
@@ -335,10 +384,64 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     }
 
     /**
+     * 实时查询主力合约, 失败则加载上一次的值
+     */
+    private void queryOrLoadPrimaryInstruments() {
+        //查询主力合约
+        File marketDataDir = TraderHomeUtil.getDirectory(TraderHomeUtil.DIR_MARKETDATA);
+        File primaryInstrumentsFile = new File(marketDataDir, "primaryInstruments.txt");
+        File primaryInstruments2File = new File(marketDataDir, "primaryInstruments2.txt");
+
+        //加载上一次的主力合约值
+        List<Exchangeable> savedPrimaryInstruments = new ArrayList<>();
+        List<Exchangeable> savedPrimaryInstruments2 = new ArrayList<>();
+
+        if ( primaryInstrumentsFile.exists() && primaryInstrumentsFile.length()>0 ) {
+            try{
+                for(String instrument: StringUtil.text2lines(FileUtil.load(primaryInstrumentsFile), true, true)) {
+                    savedPrimaryInstruments.add(Exchangeable.fromString(instrument));
+                }
+            }catch(Throwable t2) {}
+        }
+        if ( primaryInstruments2File.exists() && primaryInstruments2File.length()>0 ) {
+            try{
+                for(String instrument: StringUtil.text2lines(FileUtil.load(primaryInstruments2File), true, true)) {
+                    savedPrimaryInstruments2.add(Exchangeable.fromString(instrument));
+                }
+            }catch(Throwable t2) {}
+        }
+        try {
+            if ( queryFuturePrimaryInstruments(primaryInstruments, primaryInstruments2) ) {
+                StringBuilder text = new StringBuilder();
+                for(Exchangeable e:primaryInstruments) {
+                    text.append(e.uniqueId()).append("\n");
+                }
+                StringBuilder text2 = new StringBuilder();
+                for(Exchangeable e:primaryInstruments2) {
+                    text2.append(e.uniqueId()).append("\n");
+                }
+                //更新到硬盘, 供下次解析失败用
+                FileUtil.save(primaryInstrumentsFile, text.toString());
+                FileUtil.save(primaryInstruments2File, text2.toString());
+            }
+        }catch(Throwable t) {
+            logger.warn("Query primary instruments failed", t);
+        }
+        //解析当前的主力合约失败, 使用上一次值
+        if ( primaryInstruments==null || primaryInstruments.isEmpty() ) {
+            primaryInstruments = savedPrimaryInstruments;
+            logger.info("Reuse last primary instruments: "+savedPrimaryInstruments);
+        }
+        if ( primaryInstruments2==null || primaryInstruments2.isEmpty() ) {
+            primaryInstruments2 = savedPrimaryInstruments2;
+        }
+    }
+
+    /**
      * 为行情服务器订阅品种
      */
-    private void producersSubscribe(List<Exchangeable> exchangeables) {
-        if ( exchangeables.isEmpty() || state!=ServiceState.Ready ) {
+    private void producersSubscribe(List<Exchangeable> instruments) {
+        if ( instruments.isEmpty() || state!=ServiceState.Ready ) {
             return;
         }
         List<String> connectedIds = new ArrayList<>();
@@ -352,11 +455,11 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
         }
 
         if (logger.isInfoEnabled()) {
-            logger.info("Subscribe exchangeables " + exchangeables + " to producers: " + connectedIds);
+            logger.info("Subscribe instruments " + instruments + " to producers: " + connectedIds);
         }
 
         for(AbsMarketDataProducer producer:connectedProducers) {
-            producer.subscribe(exchangeables);
+            producer.subscribe(instruments);
         }
     }
 
@@ -393,12 +496,27 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
 
         Set<Exchangeable> resolvedInstruments = new TreeSet<>();
         for(String instrumentId:instrumentIds) {
-            if ( instrumentId.equalsIgnoreCase("$PrimaryContracts")) {
-                resolvedInstruments.addAll(primaryInstruments);
-                continue;
+            if ( instrumentId.startsWith("$")) {
+                if ( instrumentId.equalsIgnoreCase("$PrimaryContracts") || instrumentId.equalsIgnoreCase("$PrimaryInstruments")) {
+                    resolvedInstruments.addAll(primaryInstruments);
+                    continue;
+                } else if (instrumentId.equalsIgnoreCase("$PrimaryContracts2") || instrumentId.equalsIgnoreCase("$PrimaryInstruments2")) {
+                    resolvedInstruments.addAll(primaryInstruments2);
+                    continue;
+                } else {
+                    //$j, $AP, $au这种, 需要解析为主力合约
+                    String commodity = instrumentId.substring(1);
+                    Exchangeable primaryInstrument = getPrimaryInstrument(null, commodity);
+                    if ( primaryInstrument!=null ) {
+                        resolvedInstruments.add(primaryInstrument);
+                    }else {
+                        logger.warn("解析主力合约失败: "+instrumentId);
+                    }
+                }
+            } else {
+                Exchangeable e = Exchangeable.fromString(instrumentId);
+                resolvedInstruments.add(e);
             }
-            Exchangeable e = Exchangeable.fromString(instrumentId);
-            resolvedInstruments.add(e);
         }
         for(Exchangeable e:resolvedInstruments) {
             if ( allInstruments.contains(e)) {
@@ -413,7 +531,7 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
             listenerHolderLock.writeLock().lock();
             try {
                 for(Exchangeable e:newInstruments) {
-                    createListenerHolder(e, null);
+                    getOrCreateListenerHolder(e, null);
                 }
             }finally {
                 listenerHolderLock.writeLock().unlock();
@@ -440,12 +558,12 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
      */
     private void reloadProducers() {
         long t0 = System.currentTimeMillis();
-        var currProducers = this.producers;
-        var newProducers = new HashMap<String, AbsMarketDataProducer>();
-        var createdProducers = new ArrayList<AbsMarketDataProducer>();
-        var producerConfigs = (List<Map>)ConfigUtil.getObject(ITEM_PRODUCERS);
-        var newProducerIds = new ArrayList<String>();
-        var delProducerIds = new ArrayList<String>();
+        Map<String, AbsMarketDataProducer> currProducers = this.producers;
+        Map<String, AbsMarketDataProducer> newProducers = new HashMap<>();
+        List<AbsMarketDataProducer> createdProducers = new ArrayList<>();
+        List<Map> producerConfigs = (List<Map>)ConfigUtil.getObject(ITEM_PRODUCERS);
+        List<String> newProducerIds = new ArrayList<>();
+        List<String> delProducerIds = new ArrayList<>();
         if ( null!=producerConfigs ) {
             for(Map producerConfig:producerConfigs) {
                 String id = (String)producerConfig.get("id");
@@ -510,10 +628,10 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
         return result;
     }
 
-    private MarketDataListenerHolder createListenerHolder(Exchangeable exchangeable, List<Exchangeable> subscribes) {
+    private MarketDataListenerHolder getOrCreateListenerHolder(Exchangeable exchangeable, List<Exchangeable> subscribes) {
         MarketDataListenerHolder holder = listenerHolders.get(exchangeable);
         if (null == holder) {
-            holder = new MarketDataListenerHolder();
+            holder = new MarketDataListenerHolder(exchangeable, mtService.getTradingDay());
             listenerHolders.put(exchangeable, holder);
             if (subscribes != null) {
                 subscribes.add(exchangeable);
@@ -529,11 +647,15 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
     }
 
     /**
-     * 从新浪查询主力合约
-     * https://blog.csdn.net/dodo668/article/details/82382675
+     * 从新浪查询主力合约, 每个品种返回持仓量和成交量最多的两个合约
+     * <p>https://blog.csdn.net/dodo668/article/details/82382675
+     *
+     * @param primaryInstruments 主力合约
+     * @param primaryInstruments2 全部合约
+     *
+     * @return true 查询成功
      */
-    public static Collection<Future> queryPrimaryContracts() {
-        Set<Future> result = new TreeSet<>();
+    public static boolean queryFuturePrimaryInstruments(List<Exchangeable> primaryInstruments, List<Exchangeable> primaryInstruments2) {
         Map<String, List<FutureInfo>> futureInfos = new HashMap<>();
         Map<String, Future> futuresByName = new HashMap<>();
         LocalDate currYear = LocalDate.now();
@@ -572,7 +694,7 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
             }
         }catch(Throwable t) {
             logger.error("获取新浪合约行情失败, URL: "+url, t);
-            return Collections.emptyList();
+            return false;
         }
         //分解持仓和交易数据
         Pattern contractPattern = Pattern.compile("([a-zA-Z]+)\\d+");
@@ -582,64 +704,73 @@ public class MarketDataServiceImpl implements MarketDataService, ServiceErrorCod
                 //var hq_str_TF1906="";
                 continue;
             }
-            line = line.substring("var hq_str_".length());
-            int equalIndex=line.indexOf("=");
-            int lastQuotaIndex = line.lastIndexOf('"');
-            String contract = line.substring(0, equalIndex);
-            String csv = line.substring(equalIndex+1, lastQuotaIndex);
-            //
-            String parts[] = StringUtil.split(csv, ",");
-            long openInt = ConversionUtil.toLong(parts[13]);
-            long amount = ConversionUtil.toLong(parts[14]);
-            String commodity = null;
-            Matcher matcher = contractPattern.matcher(contract);
-            if ( matcher.matches() ) {
-                commodity = matcher.group(1);
+            try {
+                line = line.substring("var hq_str_".length());
+                int equalIndex=line.indexOf("=");
+                int lastQuotaIndex = line.lastIndexOf('"');
+                String contract = line.substring(0, equalIndex);
+                String csv = line.substring(equalIndex+1, lastQuotaIndex);
+                //
+                String parts[] = StringUtil.split(csv, ",");
+                long openInt = ConversionUtil.toLong(parts[13]);
+                long amount = ConversionUtil.toLong(parts[14]);
+                String commodity = null;
+                Matcher matcher = contractPattern.matcher(contract);
+                if ( matcher.matches() ) {
+                    commodity = matcher.group(1);
+                }
+                Future future = futuresByName.get(contract);
+                FutureInfo info = new FutureInfo();
+                info.future = futuresByName.get(contract);
+                info.openInt = ConversionUtil.toLong(parts[13]);
+                info.amount = ConversionUtil.toLong(parts[14]);
+                List<FutureInfo> infos = futureInfos.get(commodity);
+                if ( infos==null ) {
+                    infos = new ArrayList<>();
+                    futureInfos.put(commodity, infos);
+                }
+                infos.add(info);
+            }catch(Throwable t) {
+                logger.error("Parse sina hq line failed: "+line+", exception: "+t);
             }
-            Future future = futuresByName.get(contract);
-            FutureInfo info = new FutureInfo();
-            info.future = futuresByName.get(contract);
-            info.openInt = ConversionUtil.toLong(parts[13]);
-            info.amount = ConversionUtil.toLong(parts[14]);
-            List<FutureInfo> infos = futureInfos.get(commodity);
-            if ( infos==null ) {
-                infos = new ArrayList<>();
-                futureInfos.put(commodity, infos);
-            }
-            infos.add(info);
         }
         //排序之后再确定选择: 持仓和交易前两位
         for(List<FutureInfo> infos:futureInfos.values()) {
             Collections.sort(infos, (FutureInfo o1, FutureInfo o2)->{
                 return (int)(o1.openInt - o2.openInt);
             });
-            FutureInfo info = infos.get(infos.size()-1);
-            if( info.openInt>0) {
-                result.add(info.future);
+            FutureInfo info0 = infos.get(infos.size()-1);
+            if( info0.openInt>0) {
+                primaryInstruments.add(info0.future);
             }
-            info = infos.get(infos.size()-2);
-            if( info.openInt>0) {
-                result.add(info.future);
-            }
-            Collections.sort(infos, (FutureInfo o1, FutureInfo o2)->{
-                return (int)(o1.amount - o2.amount);
-            });
-            info = infos.get(infos.size()-1);
-            if (info.amount>0) {
-                result.add(info.future);
-            }
-            info = infos.get(infos.size()-2);
-            if (info.amount>0) {
-                result.add(info.future);
+            for(FutureInfo info2:infos) {
+                if( info2.openInt>0) {
+                    primaryInstruments2.add(info2.future);
+                }
             }
         }
-        return result;
+
+        //特别处理cffex的合约
+        for(String commodity:Exchange.CFFEX.getContractNames()) {
+            List<Future> is = Future.instrumentsFromMarketDay(currYear, commodity);
+            primaryInstruments.add(is.get(0));
+            primaryInstruments2.addAll(is);
+        }
+
+        //全部加入所有期货
+        for(Future future:allFutures) {
+            if ( !primaryInstruments2.contains(future)) {
+                primaryInstruments2.add(future);
+            }
+        }
+        return true;
     }
 
     public static Map<String, MarketDataProducerFactory> discoverProducerProviders(BeansContainer beansContainer ){
         Map<String, MarketDataProducerFactory> result = new TreeMap<>();
 
         result.put(MarketDataProducer.PROVIDER_CTP, new CtpMarketDataProducerFactory());
+        result.put(MarketDataProducer.PROVIDER_WEB, new WebMarketDataProducerFactory());
 
         PluginService pluginService = beansContainer.getBean(PluginService.class);
         if (pluginService!=null) {

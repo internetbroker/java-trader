@@ -15,6 +15,7 @@ public class OrderValidator implements TradeConstants, ServiceErrorConstants {
     private OrderBuilder builder;
 
     public OrderValidator(BeansContainer beansContainer, AccountImpl account, OrderBuilder builder) {
+        this.beansContainer = beansContainer;
         this.account = account;
         this.builder = builder;
     }
@@ -31,7 +32,10 @@ public class OrderValidator implements TradeConstants, ServiceErrorConstants {
      */
     private void validateOrderVolume(OrderBuilder builder) throws AppException
     {
-        Exchangeable e = builder.getExchangeable();
+        Exchangeable e = builder.getInstrument();
+        if ( builder.getVolume()==0 ) {
+            throw new AppException(ERRCODE_TRADE_INVALID_ORDER, "Account "+account.getId()+" create order failed: "+builder);
+        }
         //计算可用资金可以开仓手数
         int currVolume = 0;
         Position pos = account.getPosition(e);
@@ -40,10 +44,10 @@ public class OrderValidator implements TradeConstants, ServiceErrorConstants {
             if ( pos!=null ) {
                 switch(builder.getDirection()) {
                 case Buy:
-                    currVolume = pos.getVolume(PosVolume_ShortPosition);
+                    currVolume = pos.getVolume(PosVolume.ShortPosition);
                     break;
                 case Sell:
-                    currVolume = pos.getVolume(PosVolume_LongPosition);
+                    currVolume = pos.getVolume(PosVolume.LongPosition);
                     break;
                 }
             }
@@ -58,30 +62,30 @@ public class OrderValidator implements TradeConstants, ServiceErrorConstants {
      */
     private long[] validateOrderMargin(OrderBuilder builder) throws AppException
     {
-        long[] orderMoney = new long[OdrMoney_Count];
-        Exchangeable e = builder.getExchangeable();
+        long[] orderMoney = new long[OdrMoney.values().length];
+        Exchangeable e = builder.getInstrument();
         long priceCandidate = getOrderPriceCandidate(builder);
-        orderMoney[OdrMoney_PriceCandidate] = priceCandidate;
+        orderMoney[OdrMoney.PriceCandidate.ordinal()] = priceCandidate;
         long[] odrFees = account.getFeeEvaluator().compute(e, builder.getVolume(), priceCandidate, builder.getDirection(), builder.getOffsetFlag());
         long odrMarginReq = odrFees[0];
         long odrCommissionReq = odrFees[1];
         if ( builder.getOffsetFlag()==OrderOffsetFlag.OPEN ) {
             //开仓, 计算冻结保证金
             //这里出于保守起见, 不采用单边保证金机制(shfe)
-            long avail = account.getMoney(AccMoney_Available);
+            long avail = account.getMoney(AccMoney.Available);
             if( avail <= odrMarginReq+odrCommissionReq ) {
                 throw new AppException(ERRCODE_TRADE_MARGIN_NOT_ENOUGH, "Account "+account.getId()+" avail "+PriceUtil.long2price(avail)+" is NOT enough: "+odrMarginReq);
             }
             //计算持仓+新增保证金是否超出账户视图限制
             long posMargin = 0;
             for(Position pos:account.getPositions()) {
-                posMargin += pos.getMoney(PosMoney_UseMargin);
+                posMargin += pos.getMoney(PosMoney.UseMargin);
             }
-            orderMoney[OdrMoney_LocalFrozenMargin] = odrMarginReq;
+            orderMoney[OdrMoney.LocalFrozenMargin.ordinal()] = odrMarginReq;
         }else {
             //平仓, 解冻保证金这里没法计算
         }
-        orderMoney[OdrMoney_LocalFrozenCommission] = odrCommissionReq;
+        orderMoney[OdrMoney.LocalFrozenCommission.ordinal()] = odrCommissionReq;
 
         return orderMoney;
     }
@@ -92,7 +96,7 @@ public class OrderValidator implements TradeConstants, ServiceErrorConstants {
      */
     long getOrderPriceCandidate(OrderBuilder builder) {
         MarketDataService mdService = beansContainer.getBean(MarketDataService.class);
-        MarketData md = mdService.getLastData(builder.getExchangeable());
+        MarketData md = mdService.getLastData(builder.getInstrument());
         switch(builder.getPriceType()) {
         case Unknown:
         case AnyPrice:

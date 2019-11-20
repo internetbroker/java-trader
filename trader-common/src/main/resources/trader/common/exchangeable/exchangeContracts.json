@@ -5,92 +5,202 @@
         ,"_comment":"国债5年 10年期货 http://www.cffex.com.cn/10tf/  最后交易日 合约到期月份的第二个星期五"
         ,"instruments":["ThisQuarter", "NextQuarter", "NextQuarter2"]
         ,"lastTradingDay":"2.5"
+        ,"priceTick": 0.005
+        ,"volumeMultiplier": 10000
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:15:00-11:30:00", "13:00:00-15:15:00"]
+                "timeFrames":["09:15:00-11:30:00,13:00:00-15:15:00"]
+             }
+        ]
+    },
+    {
+        "exchange":"cffex",
+        "commodity":["TS"]
+        ,"_comment":"国债2年 http://www.cffex.com.cn/10tf/  最后交易日 合约到期月份的第二个星期五"
+        ,"instruments":["ThisQuarter", "NextQuarter", "NextQuarter2"]
+        ,"lastTradingDay":"2.5"
+        ,"priceTick": 0.005
+        ,"volumeMultiplier": 20000
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:15:00-11:30:00,13:00:00-15:15:00"]
              }
         ]
     }
     ,{
         "exchange":"cffex"
-        ,"commodity":["IF","IH","IC"]
+        ,"commodity":["IF","IH"]
         ,"instruments":["ThisMonth","NextMonth","NextQuarter","NextQuarter2"]
         ,"lastTradingDay":"3.5"
+        ,"priceTick": 0.2
+        ,"volumeMultiplier": 300
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:30:00-11:30:00", "13:00:00-15:00:00"]
+                "timeFrames":["09:30:00-11:30:00,13:00:00-15:00:00"]
              }
         ]
     },{
+        "exchange":"cffex"
+        ,"commodity":["IC"]
+        ,"instruments":["ThisMonth","NextMonth","NextQuarter","NextQuarter2"]
+        ,"lastTradingDay":"3.5"
+        ,"priceTick": 0.2
+        ,"volumeMultiplier": 200
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:30:00-11:30:00,13:00:00-15:00:00"]
+             }
+        ]
+    }
+    
+    ,{
         "exchange":"shfe"
         ,"commodity":["rb", "wr"]
         ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 1
+        ,"lastTradingDay":"15"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     }, {
         "exchange":"shfe"
-        ,"commodity":["ru", "hc", "fu", "bu", "sp" ]
+        ,"commodity":["ru"]
         ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 5
+        ,"lastTradingDay":"15"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             }
-            ,{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:00:00"]
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
         "exchange":"shfe"
-        ,"commodity":["cu", "al", "zn", "pb", "ni", "sn"]
+        ,"commodity":["hc", "fu"]
         ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 1
+        ,"lastTradingDay":"15"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             }
-            ,{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },  {
+        "exchange":"shfe"
+        ,"commodity":["bu", "sp" ]
+        ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 2
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-01:00:00"]
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"shfe"
+        ,"commodity":["cu"]
+        ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 5
+        ,"priceTick": 10
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-01:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"shfe"
+        ,"commodity":["ss"]
+        ,"_comment":" 不锈钢 http://www.shfe.com.cn/products/ss/standard/text/"
+        ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 5
+        ,"priceTick": 5
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2019-09-25",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-01:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
         "exchange":"shfe"
-        ,"commodity":["au", "ag"]
+        ,"commodity":["ni", "sn"]
         ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 1
+        ,"priceTick": 10
+        ,"lastTradingDay":"15"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             }
-            ,{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
+                "timeFrames":["LTD:21:00:00-01:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"shfe"
+        ,"commodity":["al", "zn", "pb"]
+        ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 5
+        ,"priceTick": 5
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-02:30:00"]
+                "timeFrames":["LTD:21:00:00-01:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"shfe"
+        ,"_comment": "http://www.shfe.com.cn/products/au/standard/173.html"
+        ,"commodity":["au"]
+        ,"instruments":["Next3And6BiMonths"]
+        ,"priceTick": 0.05
+        ,"volumeMultiplier": 1000
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-02:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"shfe"
+        ,"commodity":["ag"]
+        ,"instruments":["Next12Months"]
+        ,"priceTick": 1
+        ,"volumeMultiplier": 15
+        ,"lastTradingDay":"15"
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-02:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
@@ -99,18 +209,14 @@
         ,"commodity":["m"]
         ,"_comment":"大商所 豆粕 www.dce.com.cn/dalianshangpin/sspz/ym/hyygz/486238/index.html"
         ,"instruments":["Next8In12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 1
         ,"lastTradingDay":"10"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
@@ -124,10 +230,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     }
@@ -141,15 +246,9 @@
         ,"volumeMultiplier":100
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -162,10 +261,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     }
@@ -179,15 +277,9 @@
         ,"volumeMultiplier":10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
@@ -196,18 +288,14 @@
         ,"commodity":["a"]
         ,"_comment":"大商所 黄大豆一号"
         ,"instruments":["Next6OddMonths"]
+        ,"volumeMultiplier":10
+        ,"priceTick":1
         ,"lastTradingDay":"10"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
@@ -216,18 +304,14 @@
         ,"commodity":["b"]
         ,"_comment":"大商所 黄大豆二号"
         ,"instruments":["Next12Months"]
+        ,"priceTick":1
+        ,"volumeMultiplier":10
         ,"lastTradingDay":"10"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
@@ -241,10 +325,9 @@
         ,"volumeMultiplier":10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     },{
@@ -257,10 +340,9 @@
         ,"volumeMultiplier":10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     },{
@@ -273,15 +355,9 @@
         ,"volumeMultiplier":100
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -294,15 +370,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -312,18 +382,12 @@
         ,"instruments":["Next12Months"]
         ,"lastTradingDay":"10"
         ,"priceTick":1
-        ,"volumeMultiplier":50
+        ,"volumeMultiplier": 10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -336,15 +400,9 @@
         ,"volumeMultiplier":60
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -357,15 +415,84 @@
         ,"volumeMultiplier":10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"dce"
+        ,"commodity":["fb"]
+        ,"_comment":"大商所 纤维板 http://www.dce.com.cn/dalianshangpin/sspz/487315/487319/1498928/index.html"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 0.05
+        ,"volumeMultiplier": 500
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"dce"
+        ,"commodity":["bb"]
+        ,"_comment":"大商所 胶合板 http://www.dce.com.cn/dalianshangpin/sspz/487288/487292/1498847/index.html"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 0.05
+        ,"volumeMultiplier": 500
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"dce"
+        ,"commodity":["eg"]
+        ,"_comment":"大商所 乙二醇 http://www.dce.com.cn/dalianshangpin/sspz/yec63/6138350/6139005/index.html"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 10
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"dce"
+        ,"commodity":["rr"]
+        ,"_comment":"大商所 梗米 http://www.dce.com.cn/dalianshangpin/sspz/jm43/hyygz18/6178989/index.html"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 10
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    },{
+        "exchange":"dce"
+        ,"commodity":["eb"]
+        ,"_comment":"大商所 苯乙烯 http://www.dce.com.cn/dalianshangpin/sspz/byx/hyygz42/6189178/index.html"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"25"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 5
+        ,"marketTimes":[
+            {
+                "beginDate":"2019-09-26",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -374,13 +501,14 @@
         ,"_comment":"郑商所 苹果 http://www.czce.com.cn/portal/sspz/pg/A090218index_1.htm"
         ,"instrumentFormat":"YMM"
         ,"instruments":["Next1357Q4Months"]
+        ,"priceTick":1
+        ,"volumeMultiplier": 10
         ,"lastTradingDay":"10"
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     },{
@@ -394,15 +522,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -416,15 +538,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -438,15 +554,9 @@
         ,"volumeMultiplier":10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -460,10 +570,9 @@
         ,"volumeMultiplier":5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     },{
@@ -477,10 +586,9 @@
         ,"volumeMultiplier": 100
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
              }
         ]
     },{
@@ -494,15 +602,9 @@
         ,"volumeMultiplier": 10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -516,15 +618,9 @@
         ,"volumeMultiplier": 5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     },{
@@ -538,15 +634,9 @@
         ,"volumeMultiplier": 20
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -560,15 +650,9 @@
         ,"volumeMultiplier": 20
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -582,15 +666,9 @@
         ,"volumeMultiplier": 20
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -600,19 +678,13 @@
         ,"instrumentFormat":"YMM"
         ,"instruments":["Next6OddMonths"]
         ,"lastTradingDay":"10"
-        ,"priceTick": 2
+        ,"priceTick": 1
         ,"volumeMultiplier": 10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -626,15 +698,9 @@
         ,"volumeMultiplier": 10
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -648,15 +714,9 @@
         ,"volumeMultiplier": 20
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }, {
@@ -670,47 +730,129 @@
         ,"volumeMultiplier": 5
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-10:15:00", "10:30:00-11:30:00", "13:30:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"czce"
+        ,"commodity":["RM"]
+        ,"_comment":"郑商所 菜粕 http://www.czce.com.cn/cn/sspz/czp/H770211index_1.htm"
+        ,"instrumentFormat":"YMM"
+        ,"instruments":["Next6OddMonths"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 10
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"czce"
+        ,"commodity":["PM"]
+        ,"_comment":"郑商所 普麦 http://www.czce.com.cn/cn/sspz/pm/H770202index_1.htm"
+        ,"instrumentFormat":"YMM"
+        ,"instruments":["Next6OddMonths"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 50
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"czce"
+        ,"commodity":["LR"]
+        ,"_comment":"郑商所 晚稻 http://www.czce.com.cn/cn/sspz/wxd/H770214index_1.htm"
+        ,"instrumentFormat":"YMM"
+        ,"instruments":["Next6OddMonths"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 20
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"czce"
+        ,"commodity":["CJ"]
+        ,"_comment":"郑商所 红枣"
+        ,"instrumentFormat":"YYMM"
+        ,"instruments":["1,3,5,7,9,12"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 5
+        ,"volumeMultiplier": 5
+        ,"marketTimes":[
+            {
+                "beginDate":"2019-04-30",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:00:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    }, {
+        "exchange":"czce"
+        ,"commodity":["UR"]
+        ,"_comment":"郑商所 尿素 http://www.czce.com.cn/cn/sspz/nsqh/H770223index_1.htm"
+        ,"instrumentFormat":"YMM"
+        ,"instruments":["Next12Months"]
+        ,"lastTradingDay":"10"
+        ,"priceTick": 1
+        ,"volumeMultiplier": 20
+        ,"marketTimes":[
+            {
+                "beginDate":"2019-04-30",
+                "endDate":"2099-12-31",
+                "timeFrames":["09:00:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
     }
     ,{
         "exchange":"ine"
         ,"commodity":["sc"]
-        ,"_comment":"上海国际能源交易中心原油期货标准合"
-        ,"instruments":["Next12Months"]
+        ,"_comment":"上海国际能源交易中心原油期货标准合约 http://www.ine.cn/products/oil/standard/text/"
+        ,"instruments":["Next12MonthsAnd8Quarters"]
+        ,"volumeMultiplier": 1000
+        ,"priceTick": 0.1
         ,"lastTradingDay":"10"
         ,"marketTimes":[
             {
-                "marketType":"Day",
-                "beginDate":"2018-04-01",
+                "beginDate":"2018-03-26",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:00:00-11:30:00", "13:00:00-15:00:00"]
-             },{
-                "marketType":"Night",
-                "beginDate":"2016-05-03",
-                "endDate":"2099-12-31",
-                "timeFrames":["21:00:00-23:30:00"]
+                "timeFrames":["LTD:21:00:00-23:30:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
             }
         ]
-    }
-    ,{
+    }, {
+        "exchange":"ine"
+        ,"commodity":["nr"]
+        ,"_comment": "上海国际能源交易中心20号胶期货标准合约 http://www.ine.cn/products/TSR20/standard/text/"
+        ,"instruments":["Next12Months"]
+        ,"volumeMultiplier": 10
+        ,"priceTick": 5
+        ,"marketTimes":[
+            {
+                "beginDate":"2016-01-01",
+                "endDate":"2099-12-31",
+                "timeFrames":["LTD:21:00:00-23:00:00", "09:00:00-10:15:00,10:30:00-11:30:00,13:30:00-15:00:00"]
+            }
+        ]
+    } ,{
         "exchange":"sse"
         ,"commodity":["*"]
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:30:00-11:30:00", "13:00:00-15:00:00"]
+                "timeFrames":["09:30:00-11:30:00,13:00:00-15:00:00"]
              }
         ]
     }
@@ -719,10 +861,9 @@
         ,"commodity":["*"]
         ,"marketTimes":[
             {
-                "marketType":"Day",
                 "beginDate":"2016-01-01",
                 "endDate":"2099-12-31",
-                "timeFrames":["09:30:00-11:30:00", "13:00:00-15:00:00"]
+                "timeFrames":["09:30:00-11:30:00,13:00:00-15:00:00"]
              }
         ]
     }

@@ -52,6 +52,22 @@ public class StringUtil
         }
     }
 
+    public static class KVPair{
+        public final String k;
+        public final String v;
+        public final String str;
+        public KVPair(String k, String v, String str) {
+            this.k = k;
+            this.v = v;
+            this.str = str;
+        }
+
+        @Override
+        public String toString() {
+            return str;
+        }
+    }
+
     public static final Charset GBK = Charset.forName("GBK");
     public static final Charset UTF8 = Charset.forName("UTF-8");
     public static final Charset UTF16 = Charset.forName("UTF-16");
@@ -215,19 +231,21 @@ public class StringUtil
         if ( ignoreEmptyLines ) {
             trim = true;
         }
-        try(BufferedReader br = new BufferedReader(new StringReader(text));) {
-            String line = null;
+        if ( !StringUtil.isEmpty(text) ) {
+            try(BufferedReader br = new BufferedReader(new StringReader(text));) {
+                String line = null;
 
-            while( (line=br.readLine())!=null ) {
-                if ( trim) {
-                    line = line.trim();
+                while( (line=br.readLine())!=null ) {
+                    if ( trim) {
+                        line = line.trim();
+                    }
+                    if ( ignoreEmptyLines && line.isEmpty() ) {
+                        continue;
+                    }
+                    result.add(line);
                 }
-                if ( ignoreEmptyLines && line.isEmpty() ) {
-                    continue;
-                }
-                result.add(line);
-            }
-        } catch (IOException e) {}
+            } catch (IOException e) {}
+        }
         return result;
     }
 
@@ -269,10 +287,19 @@ public class StringUtil
         Properties props = new Properties();
         if ( !StringUtil.isEmpty(text) ) {
             try(BufferedReader reader=new BufferedReader(new StringReader(text));){
+                String preLine=null;
                 String line = null;
                 while( (line=reader.readLine())!=null ){
                     line = line.trim();
+                    if ( preLine!=null ) {
+                        line = preLine+line;
+                        preLine = null;
+                    }
                     if ( line.startsWith("#")){
+                        continue;
+                    }
+                    if ( line.endsWith("\\")) {
+                        preLine = line;
                         continue;
                     }
                     int equalIndex = line.indexOf("=");
@@ -287,6 +314,27 @@ public class StringUtil
             }catch(IOException e){}
         }
         return props;
+    }
+
+    /**
+     * 解析参数为Key-Value值对
+     */
+    public static List<KVPair> args2kvpairs(List<String> args){
+        List<KVPair> result = new ArrayList<>();
+        for(String arg:args) {
+            if ( arg.startsWith("--")) {
+                arg = arg.substring(2);
+            }else if ( arg.startsWith("-")) {
+                arg = arg.substring(1);
+            }
+            int idx=arg.indexOf('=');
+            if ( idx>0 ) {
+                result.add(new KVPair(arg.substring(0, idx), arg.substring(idx+1), arg));
+            }else {
+                result.add(new KVPair(arg, null, arg));
+            }
+        }
+        return result;
     }
 
     public static String md5(String input) {
@@ -497,40 +545,32 @@ public class StringUtil
         return Collections.emptyMap();
     }
 
+    public static String wildcard2pattern(String wildcard) {
+        StringBuilder pattern = new StringBuilder(wildcard.length()+10);
+        for(int i=0;i<wildcard.length();i++) {
+            char c = wildcard.charAt(i);
+            switch(c) {
+            case '?':
+                pattern.append(".");
+                break;
+            case '*':
+                pattern.append(".*");
+                break;
+            default:
+                pattern.append(c);
+            }
+        }
+        return pattern.toString();
+    }
+
     /**
      * 支持*?的简单字符串匹配
      */
-    public static boolean wildcardMatches(String str, String pattern) {
-        if ( isEmpty(str) ) {
+    public static boolean wildcardMatches(String str, String wildcard) {
+        if (StringUtil.isEmpty(str)) {
             return false;
         }
-        char[] chars = str.toCharArray();
-        char[] charp = pattern.toCharArray();
-
-        int ss = -1,pp = -1;
-        int sIndex = 0,pIndex = 0;
-
-        while(sIndex<chars.length){
-            if(pIndex == charp.length){//false，回溯
-                if(pp == -1) return false;
-
-                pIndex = pp+1; sIndex = ss++;
-            }
-            else if(charp[pIndex] == '?' || chars[sIndex] == charp[pIndex]){//相同
-                pIndex++;sIndex++;
-            }else if(charp[pIndex] == '*'){
-                pp = pIndex;ss = sIndex;pIndex = pp+1;
-            }else{
-                if(pp == -1) return false;
-                pIndex = pp+1;sIndex = ss++;
-            }
-        }
-        while(pIndex<charp.length){
-            if(charp[pIndex] != '*')
-                break;
-            pIndex++;
-        }
-        return pIndex == charp.length;
+        return str.matches(wildcard2pattern(wildcard));
     }
 
     /**

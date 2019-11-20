@@ -1,67 +1,14 @@
 package trader.common.exchangeable;
 
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import trader.common.exchangeable.Exchange.MarketType;
-import trader.common.util.DateUtil;
+import trader.common.util.PriceUtil;
 import trader.common.util.StringUtil;
 
 public abstract class Exchangeable implements Comparable<Exchangeable> {
-
-    static class ExchangeableTradingMarketInfo implements TradingMarketInfo{
-        private LocalDate tradingDay;
-        private MarketType market;
-        private LocalDateTime[] marketTimes;
-        private int tradingMillis;
-        private int marketTradingTime;
-        private MarketTimeStage marketTimeStage;
-
-        @Override
-        public LocalDate getTradingDay() {
-            return tradingDay;
-        }
-
-        @Override
-        public MarketType getMarket() {
-            return market;
-        }
-
-        @Override
-        public LocalDateTime[] getMarketTimes() {
-            return marketTimes;
-        }
-
-        @Override
-        public LocalDateTime getMarketOpenTime(){
-            return marketTimes[0];
-        }
-
-        @Override
-        public LocalDateTime getMarketCloseTime(){
-            return marketTimes[marketTimes.length-1];
-        }
-
-        @Override
-        public int getTradingMillis() {
-            return tradingMillis;
-        }
-
-        @Override
-        public int getTradingTime() {
-            return marketTradingTime;
-        }
-
-        @Override
-        public MarketTimeStage getStage() {
-            return marketTimeStage;
-        }
-    }
 
     protected Exchange exchange;
     protected String id;
@@ -138,140 +85,12 @@ public abstract class Exchangeable implements Comparable<Exchangeable> {
         }
     }
 
-    /**
-     * 探测交易日相关信息
-     */
-    public TradingMarketInfo detectTradingMarketInfo(LocalDateTime marketTime){
-        ExchangeableTradingMarketInfo result = new ExchangeableTradingMarketInfo();
-        LocalDate day = marketTime.toLocalDate();
-
-        result.market = MarketType.Day;
-        result.marketTimes = exchange.getMarketTimes(MarketType.Day, commodity(), day);
-        if ( MarketDayUtil.isMarketDay(exchange, day)){
-            //日盘
-            result.tradingDay = day;
-            LocalDateTime dayOpenTime = result.marketTimes[0];
-            LocalDateTime dayCloseTime = result.marketTimes[result.marketTimes.length-1];
-            LocalDateTime dayOpenTime_M1 = dayOpenTime.plusMinutes(-30);
-            LocalDateTime dayCloseTime_P1 = dayCloseTime.plusMinutes(30);
-            //日盘.开盘前30分钟 -- 收盘后30分钟
-            if ( marketTime.isAfter(dayOpenTime_M1) && marketTime.isBefore(dayCloseTime_P1)){
-                //计算tradingMillis
-                result.tradingMillis = computeTradingMillis(result, dayCloseTime);
-                result.marketTradingTime = computeTradingMillis(result, marketTime);
-                result.marketTimeStage = getTimeStage(result.market, result.tradingDay, marketTime);
-                return result;
-            }
-        }
-        //无夜盘, 不需要处理
-        if( !exchange.hasMarket(MarketType.Night)){
-            return null;
-        }
-        LocalDateTime dayCloseTime = result.marketTimes[result.marketTimes.length-1];
-        LocalDate tradingDay = null;
-        if ( marketTime.getHour()>=0 && marketTime.getHour()<=3 ){
-            //检查是否当日的夜盘 0:00-3:00
-            tradingDay = MarketDayUtil.nextMarketDay(exchange, day.minusDays(1) );
-        }else if ( marketTime.getHour()>= dayCloseTime.getHour()){
-            //检查是否是下一个交易日的夜盘
-            tradingDay = MarketDayUtil.nextMarketDay(exchange, day);
-        }else{
-            return null;
-        }
-        LocalDateTime[] nightMarketTimes = exchange.getMarketTimes(MarketType.Night, commodity(), tradingDay);
-        LocalDateTime nightOpenTime = nightMarketTimes[0];
-        LocalDateTime nightCloseTime = nightMarketTimes[1];
-        LocalDateTime nightOpenTime_M1 = nightOpenTime.plusMinutes(-30);
-        LocalDateTime nightCloseTime_P1 = nightCloseTime.plusMinutes(30);
-        if ( marketTime.isAfter(nightOpenTime_M1) && marketTime.isBefore(nightCloseTime_P1) ){
-            result.marketTimes = nightMarketTimes;
-            result.market = MarketType.Night;
-            result.tradingDay = tradingDay;
-            result.tradingMillis = computeTradingMillis(result, nightCloseTime);
-            result.marketTradingTime = computeTradingMillis(result, marketTime);
-            result.marketTimeStage = getTimeStage(result.market, result.tradingDay, marketTime);
-            return result;
-        }
-        return null;
+    public long getPriceTick() {
+        return PriceUtil.price2long(0.01);
     }
 
-    private static int computeTradingMillis(ExchangeableTradingMarketInfo marketInfo, LocalDateTime marketTime) {
-        int result = 0;
-        for(int i=0;i<marketInfo.marketTimes.length;i+=2) {
-            LocalDateTime marketTimeStageBegin = marketInfo.marketTimes[i];
-            LocalDateTime marketTimeStageEnd = marketInfo.marketTimes[i+1];
-            if ( marketTime.compareTo(marketTimeStageBegin)<0 ) {
-                break;
-            }
-            Duration d = null;
-            int compareResult = marketTime.compareTo(marketTimeStageEnd);
-            if ( compareResult<=0 ) {
-                d = DateUtil.between(marketInfo.marketTimes[i], marketTime);
-            }else {
-                d = DateUtil.between(marketInfo.marketTimes[i], marketTimeStageEnd);
-            }
-            long millis = d.getSeconds()*1000+d.getNano()/1000000;
-            result += millis;
-            if ( compareResult<=0 ) {
-                break;
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 探测交易日
-     */
-    public LocalDate detectTradingDay(LocalDateTime marketTime){
-        TradingMarketInfo marketInfo = detectTradingMarketInfo(marketTime);
-        if ( marketInfo!=null){
-            return marketInfo.getTradingDay();
-        }
-        return null;
-    }
-
-    /**
-     * 根据交易日, 实际时间返回市场的时间段
-     */
-    public MarketTimeStage getTimeStage(MarketType marketType, LocalDate tradingDay, LocalDateTime time){
-        LocalDateTime[] marketTimes = exchange.getMarketTimes(marketType, commodity(), tradingDay);
-        if ( marketTimes==null ){
-            return MarketTimeStage.MarketClose;
-        }
-        LocalDateTime marketOpenTime = marketTimes[0];
-        LocalDateTime aggregateAuctionTime = marketOpenTime.minusMinutes(5);
-        LocalDateTime marketCloseTime = marketTimes[marketTimes.length-1];
-        if ( time.isBefore(aggregateAuctionTime) ){
-            return MarketTimeStage.BeforeMarketOpen;
-        }
-        if ( time.isAfter(aggregateAuctionTime) && time.isBefore(marketOpenTime)){
-            return MarketTimeStage.AggregateAuction;
-        }
-
-        for(int i=0; i<marketTimes.length; i+=2){
-            LocalDateTime tradeBeginTime = marketTimes[i];
-            LocalDateTime tradeEndTime = marketTimes[i+1];
-
-            if ( compareTimeNoNanos(time,tradeBeginTime)>=0 && compareTimeNoNanos(time, tradeEndTime)<=0 ){
-                return MarketTimeStage.MarketOpen;
-            }
-
-            boolean lastFragment = i>=(marketTimes.length-2);
-            if ( !lastFragment && time.isAfter(tradeEndTime)){
-                LocalDateTime nextBeginTime = marketTimes[i+2];
-                if ( time.isBefore(nextBeginTime)){
-                    return MarketTimeStage.MarketBreak;
-                }
-            }
-        }
-        if ( compareTimeNoNanos(time, marketCloseTime)>0 ){
-            return MarketTimeStage.MarketClose;
-        }
-        throw new RuntimeException("Should not run here");
-    }
-
-    private static int compareTimeNoNanos(LocalDateTime time1, LocalDateTime time2) {
-        return time1.withNano(0).compareTo(time2.withNano(0));
+    public int getVolumeMutiplier() {
+        return 1;
     }
 
     @Override
@@ -380,7 +199,7 @@ public abstract class Exchangeable implements Comparable<Exchangeable> {
 
         int idx = str.indexOf('.');
         if ( idx<0 ){
-            result = Future.fromInstrument(str);
+            result = new Future(Future.detectExchange(str), str);
         }else{
             String exchangeName = str.substring(0,idx);
             String id = str.substring(idx+1);
@@ -399,7 +218,7 @@ public abstract class Exchangeable implements Comparable<Exchangeable> {
                 }
             }
             if (result == null) {
-                throw new RuntimeException("Unknown exchangeable string: " + str);
+                throw new RuntimeException("Unknown instrument string: " + str);
             }
         }
 
@@ -420,7 +239,7 @@ public abstract class Exchangeable implements Comparable<Exchangeable> {
     public static Exchangeable fromString(String exchangeStr, String instrumentStr, String instrumentName){
         String uniqueStr = null;
         if ( !StringUtil.isEmpty(exchangeStr) ) {
-            uniqueStr = exchangeStr+"."+instrumentStr;
+            uniqueStr = instrumentStr+"."+exchangeStr;
         } else {
             uniqueStr = instrumentStr;
         }

@@ -25,12 +25,17 @@ public interface TradletGroup extends TradletConstants, JsonEnabled {
     public Account getAccount();
 
     /**
-     * 可交易品种
+     * 关注的交易品种
      */
-    public Exchangeable getExchangeable();
+    public List<Exchangeable> getInstruments();
 
     /**
-     * 交易策略列表.
+     * 返回指定的交易小程序
+     */
+    public Tradlet getTradlet(String tradletId);
+
+    /**
+     * 交易程序列表.
      * <BR>注意該函數在Tradlet.init()中无法运用
      */
     public List<Tradlet> getTradlets();
@@ -59,4 +64,11 @@ public interface TradletGroup extends TradletConstants, JsonEnabled {
      * 返回Playbook管理类
      */
     public PlaybookKeeper getPlaybookKeeper();
+
+    /**
+     * 交互式查询数据
+     * @param queryExpr
+     * @return
+     */
+    public String queryData(String queryExpr);
 }

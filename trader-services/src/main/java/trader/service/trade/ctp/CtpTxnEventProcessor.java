@@ -15,6 +15,7 @@ import net.jctp.CThostFtdcInputOrderField;
 import net.jctp.CThostFtdcOrderActionField;
 import net.jctp.CThostFtdcOrderField;
 import net.jctp.CThostFtdcRspInfoField;
+import net.jctp.CThostFtdcRspTransferField;
 import net.jctp.CThostFtdcTradeField;
 import net.jctp.JctpConstants;
 import trader.common.exchangeable.Exchange;
@@ -41,6 +42,7 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
     public static final int DATA_TYPE_ERR_RTN_ORDER_INSERT = 3;
     public static final int DATA_TYPE_RSP_ORDER_INSERT = 4;
     public static final int DATA_TYPE_RSP_ORDER_ACTION = 5;
+    public static final int DATA_TYPE_RTN_ACCOUNT_TRANSFER = 6;
 
     private CtpTxnSession session;
     private TxnSessionListener listener;
@@ -49,7 +51,7 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
     public CtpTxnEventProcessor(Account account, CtpTxnSession session, TxnSessionListener listener) {
         this.session = session;
         this.listener = listener;
-        logger = LoggerFactory.getLogger(account.getLoggerPackage()+"."+getClass().getSimpleName());
+        logger = LoggerFactory.getLogger(account.getLoggerCategory()+"."+getClass().getSimpleName());
     }
 
     /**
@@ -74,12 +76,22 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
             processRspOrderAction((CThostFtdcInputOrderActionField)data,(CThostFtdcRspInfoField)data2);
             break;
         case DATA_TYPE_ERR_RTN_ORDER_ACTION:
-            processErrRtnOrderAction( (CThostFtdcOrderActionField) data, (CThostFtdcRspInfoField)data);
+            processErrRtnOrderAction( (CThostFtdcOrderActionField) data, (CThostFtdcRspInfoField)data2);
             break;
+        case DATA_TYPE_RTN_ACCOUNT_TRANSFER:
+            processRtnAccountTransferAction( (AccountTransferAction)data, (CThostFtdcRspTransferField)data2);
         default:
             logger.error("Unknown event type: "+Integer.toHexString(eventType)+", data: "+data+", data2: "+data2);
             break;
         }
+    }
+
+    /**
+     * 账户转账事件处理函数
+     */
+    private void processRtnAccountTransferAction(AccountTransferAction transferAction, CThostFtdcRspTransferField transferInfo) {
+        long tradeAmount = PriceUtil.price2long(transferInfo.TradeAmount);
+        listener.onAccountTransfer(transferAction, tradeAmount);
     }
 
     /**
@@ -89,14 +101,14 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
         try{
             Map<String, String> attrs = new HashMap<>();
             if (!StringUtil.isEmpty(pOrder.OrderSysID)) {
-                attrs.put(Order.ATTR_SYS_ID, pOrder.OrderSysID);
+                attrs.put(Order.ODRATR_CTP_SYS_ID, pOrder.OrderSysID);
             }
-            attrs.put(Order.ATTR_SESSION_ID, ""+pOrder.SessionID);
-            attrs.put(Order.ATTR_FRONT_ID, ""+pOrder.FrontID);
-            attrs.put(Order.ATTR_STATUS, ""+pOrder.OrderStatus);
-            OrderState state = CtpUtil.ctp2OrderState(pOrder.OrderStatus, pOrder.OrderSubmitStatus);
+            attrs.put(Order.ODRATR_CTP_SESSION_ID, ""+pOrder.SessionID);
+            attrs.put(Order.ODRATR_CTP_FRONT_ID, ""+pOrder.FrontID);
+            attrs.put(Order.ODRATR_CTP_STATUS, ""+pOrder.OrderStatus);
+            OrderState state = CtpUtil.ctp2orderState(pOrder.OrderStatus, pOrder.OrderSubmitStatus);
             String stateMessage = pOrder.StatusMsg;
-            OrderSubmitState submitState = CtpUtil.ctp2OrderSubmitState(pOrder.OrderSubmitStatus);
+            OrderSubmitState submitState = CtpUtil.ctp2orderSubmitState(pOrder.OrderSubmitStatus);
             switch(state){
             case Submitted:
                 //submitState = (OrderSubmitState.InsertSubmitted);
@@ -114,7 +126,7 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
             }
             Order order = listener.getOrderByRef(pOrder.OrderRef);
             if ( order!=null ) {
-                listener.changeOrderState(order, new OrderStateTuple(state, submitState, System.currentTimeMillis(), stateMessage), attrs);
+                listener.onOrderStateChanged(order, new OrderStateTuple(state, submitState, System.currentTimeMillis(), stateMessage), attrs);
             } else {
                 JsonObject orderInfo = field2json(pOrder);
                 orderInfo.addProperty("state", state.name());
@@ -135,11 +147,11 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
      */
     private void processRtnTrade(CThostFtdcTradeField pTrade) {
         LocalDateTime tradeTime = DateUtil.str2localdatetime(pTrade.TradeDate, pTrade.TradeTime,0);
-        listener.createTransaction(
+        listener.onTransaction(
                 pTrade.TradeID,
                 pTrade.OrderRef,
-                CtpUtil.ctp2OrderDirection(pTrade.Direction),
-                CtpUtil.ctp2OrderOffsetFlag(pTrade.OffsetFlag),
+                CtpUtil.ctp2orderDirection(pTrade.Direction),
+                CtpUtil.ctp2orderOffsetFlag(pTrade.OffsetFlag),
                 PriceUtil.price2long(pTrade.Price),
                 pTrade.Volume,
                 DateUtil.localdatetime2long(CTP_ZONE, tradeTime),
@@ -163,8 +175,8 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
         }
         Order order = listener.getOrderByRef(pInputOrder.OrderRef);
         if ( order!=null ) {
-            listener.changeOrderState(order, new OrderStateTuple(OrderState.Failed, OrderSubmitState.InsertRejected, System.currentTimeMillis(), failReason), null);
-        }else {
+            listener.onOrderStateChanged(order, new OrderStateTuple(OrderState.Failed, OrderSubmitState.InsertRejected, System.currentTimeMillis(), failReason), null);
+        } else {
             JsonObject orderInfo = field2json(pInputOrder);
             orderInfo.addProperty("state", OrderState.Failed.name());
             orderInfo.addProperty("submitState", OrderSubmitState.InsertRejected.name());
@@ -188,8 +200,8 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
         }
         Order order = listener.getOrderByRef(pInputOrder.OrderRef);
         if ( order!=null ) {
-            listener.changeOrderState(order, new OrderStateTuple(OrderState.Failed, OrderSubmitState.InsertRejected, System.currentTimeMillis(), failReason), null);
-        }else {
+            listener.onOrderStateChanged(order, new OrderStateTuple(OrderState.Failed, OrderSubmitState.InsertRejected, System.currentTimeMillis(), failReason), null);
+        } else {
             JsonObject orderInfo = field2json(pInputOrder);
             orderInfo.addProperty("state", OrderState.Failed.name());
             orderInfo.addProperty("submitState", OrderSubmitState.InsertRejected.name());
@@ -228,7 +240,7 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
             submitState = (OrderSubmitState.CancelRejected);
             break;
         }
-        listener.changeOrderState(orderRef, new OrderStateTuple(odrState, submitState, System.currentTimeMillis(), failReason), null);
+        listener.onOrderStateChanged(order, new OrderStateTuple(odrState, submitState, System.currentTimeMillis(), failReason), null);
 
         if ( logger.isInfoEnabled() ) {
             logger.info("OnRspOrderAction: "+pInputOrderAction+" "+pRspInfo);
@@ -260,7 +272,7 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
             submitState = (OrderSubmitState.CancelRejected);
             break;
         }
-        listener.changeOrderState(orderRef, new OrderStateTuple(odrState, submitState, System.currentTimeMillis(), failReason), null);
+        listener.onOrderStateChanged(order, new OrderStateTuple(odrState, submitState, System.currentTimeMillis(), failReason), null);
 
         if ( logger.isInfoEnabled() ) {
             logger.info("OnErrRtnOrderAction: "+pOrderAction+" "+pRspInfo);
@@ -273,29 +285,29 @@ public class CtpTxnEventProcessor implements AsyncEventProcessor, JctpConstants,
     private static JsonObject field2json(CThostFtdcInputOrderField field) {
         JsonObject orderInfo = new JsonObject();
         orderInfo.addProperty("ref", field.OrderRef);
-        orderInfo.addProperty("exchangeable", field.InstrumentID);
-        orderInfo.addProperty("direction", CtpUtil.ctp2OrderDirection(field.Direction).name());
-        orderInfo.addProperty("priceType", CtpUtil.ctp2OrderPriceType(field.OrderPriceType).name());
+        orderInfo.addProperty("instrument", field.InstrumentID);
+        orderInfo.addProperty("direction", CtpUtil.ctp2orderDirection(field.Direction).name());
+        orderInfo.addProperty("priceType", CtpUtil.ctp2orderPriceType(field.OrderPriceType).name());
         orderInfo.addProperty("limitPrice", field.LimitPrice);
-        orderInfo.addProperty("offsetFlag", CtpUtil.ctp2OrderOffsetFlag(field.CombOffsetFlag.charAt(0)).name());
+        orderInfo.addProperty("offsetFlag", CtpUtil.ctp2orderOffsetFlag(field.CombOffsetFlag.charAt(0)).name());
         return orderInfo;
     }
 
     private static JsonObject field2json(CThostFtdcOrderField field) {
         JsonObject orderInfo = new JsonObject();
         orderInfo.addProperty("ref", field.OrderRef);
-        orderInfo.addProperty("exchangeable", field.InstrumentID);
-        orderInfo.addProperty("direction", CtpUtil.ctp2OrderDirection(field.Direction).name());
-        orderInfo.addProperty("priceType", CtpUtil.ctp2OrderPriceType(field.OrderPriceType).name());
+        orderInfo.addProperty("instrument", field.InstrumentID);
+        orderInfo.addProperty("direction", CtpUtil.ctp2orderDirection(field.Direction).name());
+        orderInfo.addProperty("priceType", CtpUtil.ctp2orderPriceType(field.OrderPriceType).name());
         orderInfo.addProperty("limitPrice", field.LimitPrice);
-        orderInfo.addProperty("offsetFlag", CtpUtil.ctp2OrderOffsetFlag(field.CombOffsetFlag.charAt(0)).name());
+        orderInfo.addProperty("offsetFlag", CtpUtil.ctp2orderOffsetFlag(field.CombOffsetFlag.charAt(0)).name());
 
         JsonObject attrs = new JsonObject();
-        attrs.addProperty(Order.ATTR_SESSION_ID, ""+field.SessionID);
-        attrs.addProperty(Order.ATTR_FRONT_ID, ""+field.FrontID);
-        attrs.addProperty(Order.ATTR_STATUS, ""+field.OrderStatus);
+        attrs.addProperty(Order.ODRATR_CTP_SESSION_ID, ""+field.SessionID);
+        attrs.addProperty(Order.ODRATR_CTP_FRONT_ID, ""+field.FrontID);
+        attrs.addProperty(Order.ODRATR_CTP_STATUS, ""+field.OrderStatus);
         if (!StringUtil.isEmpty(field.OrderSysID)) {
-            attrs.addProperty(Order.ATTR_SYS_ID, ""+field.OrderSysID);
+            attrs.addProperty(Order.ODRATR_CTP_SYS_ID, ""+field.OrderSysID);
         }
         orderInfo.add("attrs", attrs);
         return orderInfo;

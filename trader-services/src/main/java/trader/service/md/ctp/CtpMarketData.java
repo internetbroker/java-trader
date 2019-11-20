@@ -19,33 +19,41 @@ public class CtpMarketData extends MarketData {
 
     CThostFtdcDepthMarketDataField field;
 
-    public CtpMarketData(String producerId, Exchangeable exchangeable, CThostFtdcDepthMarketDataField data, LocalDate tradingDay) {
+    public CtpMarketData(String producerId, Exchangeable instrument, CThostFtdcDepthMarketDataField data, LocalDate tradingDay) {
         this.producerId = producerId;
         this.field = data;
-        this.instrumentId = exchangeable;
+        this.instrument = instrument;
         this.volume = data.Volume;
-        this.turnover = PriceUtil.price2long(data.Turnover);
         this.openInterest = (long)data.OpenInterest;
         this.lastPrice = PriceUtil.price2long(data.LastPrice);
         String actionDayStr = data.ActionDay;
         String tradingDayStr = data.TradingDay;
-        if ( exchangeable.exchange()==Exchange.DCE ) {
+        //周五夜市DCE的ActionDay提前3天, CZCE的TradingDay晚了3天, SHFE正常
+        //2015-01-30 21:03:00 DCE ActionDay 20150202, TraingDay 20150202
+        //2015-01-30 21:03:00 CZCE ActionDay 20150130, TraingDay 20150130
+        //2015-01-30 21:03:00 SHFE ActionDay 20150130, TraingDay 20150202
+        if ( instrument.exchange()==Exchange.DCE ) {
             //DCE的ActionDay, 夜市的值实际上是TradignDay
             int timeInt = DateUtil.time2int(data.UpdateTime);
             if (timeInt >= 80000 && timeInt <= 185000) {
-                // 日市tradingDay==actionDay, 不做任何修改
-            } else {
+               // 日市tradingDay==actionDay, 不做任何修改
+            }  else {
                 // 夜市 tradingDay-1 = actionDay
-                LocalDate actionDay = MarketDayUtil.prevMarketDay(exchangeable.exchange(), DateUtil.str2localdate(data.TradingDay));
+                LocalDate actionDay = MarketDayUtil.prevMarketDay(Exchange.DCE, DateUtil.str2localdate(data.TradingDay));
                 // 夜市的00:0002:30, 夜市后半场
                 if (timeInt < 30000) {
                     actionDay = actionDay.plusDays(1);
                 }
                 actionDayStr = DateUtil.date2str(actionDay);
             }
-        } else if ( exchangeable.exchange()==Exchange.CZCE ) {
+        } else if ( instrument.exchange()==Exchange.CZCE ) {
             //CZCE的tradingDay是actionDay, 需要判断后加以识别
             tradingDayStr = DateUtil.date2str(tradingDay);
+            //CZCE 每天早上推送一条昨晚夜市收盘的价格, 但是ActionDay/TradingDay 都是当天白天日市数据
+            if ( PriceUtil.isValidPrice(data.ClosePrice) && data.UpdateTime.compareTo("15")>0 ) { //日市会将夜市的ClosePrice记录下来
+                LocalDate actionDay0 = MarketDayUtil.prevMarketDay(Exchange.CZCE, tradingDay);
+                actionDayStr = DateUtil.date2str(actionDay0);
+            }
         }
         if ( StringUtil.isEmpty(tradingDayStr)) {
             tradingDayStr = DateUtil.date2str(tradingDay);
@@ -57,7 +65,15 @@ public class CtpMarketData extends MarketData {
         this.openPrice = PriceUtil.price2long(data.OpenPrice);
         this.highestPrice = PriceUtil.price2long(data.HighestPrice);
         this.lowestPrice = PriceUtil.price2long(data.LowestPrice);
-        this.averagePrice = PriceUtil.price2long(data.AveragePrice);
+        //CTP的市场均价需要除以合约乘数, 郑州所除外
+        int volumeMultiplier = this.instrument.getVolumeMutiplier();
+        if ( instrument.exchange()==Exchange.CZCE ) {
+            this.averagePrice = PriceUtil.price2long(data.AveragePrice);
+            this.turnover = PriceUtil.price2long(data.Turnover)*volumeMultiplier;
+        } else {
+            this.turnover = PriceUtil.price2long(data.Turnover);
+            this.averagePrice = PriceUtil.price2long(data.AveragePrice)/volumeMultiplier;
+        }
         this.tradingDay = tradingDayStr;
         this.upperLimitPrice = PriceUtil.price2long(data.UpperLimitPrice);
         this.lowerLimitPrice = PriceUtil.price2long(data.LowerLimitPrice);
@@ -129,7 +145,7 @@ public class CtpMarketData extends MarketData {
 
     @Override
     public MarketData clone() {
-        CtpMarketData obj = new CtpMarketData(producerId, instrumentId, field, DateUtil.str2localdate(tradingDay));
+        CtpMarketData obj = new CtpMarketData(producerId, instrument, field, DateUtil.str2localdate(tradingDay));
         cloneImpl(obj);
         return obj;
     }

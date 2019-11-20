@@ -1,14 +1,38 @@
 package trader.common.util;
 
 import java.io.File;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
+import com.google.gson.JsonObject;
+
+import net.common.util.PlatformUtil;
+import trader.common.config.ConfigUtil;
+import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.ExchangeableData;
+import trader.common.exchangeable.ExchangeableTradingTimes;
 
 public class TraderHomeUtil {
 
-    public static final String PROP_REPOSITORY_DIR = "trader.repositoryDir";
+    public static final String PROP_REPOSITORY_DIR = "trader.repository";
     public static final String PROP_TRADER_HOME = "trader.home";
+    public static final String PROP_TRADER_ETC_DIR = "trader.etc";
     public static final String PROP_TRADER_CONFIG_FILE = "trader.configFile";
+    /**
+     * 该系统属性被logback-spring.xml使用
+     */
+    public static final String PROP_TRADER_CONFIG_NAME = "trader.configName";
+    /**
+     * 交易日
+     */
+    public static final String PROP_TRADER_TRADINGDAY = "trader.tradingDay";
+
+    public static final String PROP_DEFAULT_TRADER_CONFIG_NAME = "trader.defaultConfigName";
 
     public static final String ENV_TRADER_HOME = "TRADER_HOME";
 
@@ -17,31 +41,47 @@ public class TraderHomeUtil {
     /**
      * 保存已归档的行情数据的总目录
      */
-    public static final String DIR_REPOSITORY = "repository";
+    public static final String DIR_REPOSITORY = "data/repository";
     /**
      * 废弃文件的目录
      */
-    public static final String DIR_TRASH = "trash";
+    public static final String DIR_TRASH = "data/trash";
     /**
      * 临时保存行情文件的目录, 会在收市后通过工具导入到repository
      */
-    public static final String DIR_MARKETDATA = "tmarketData";
+    public static final String DIR_MARKETDATA = "data/marketData";
     /**
      * 插件所在目录
      */
     public static final String DIR_PLUGIN = "plugin";
     /**
-     * 工作临时目录, 程序关闭后可放心删除
+     * 工作目录, 程序关闭后可放心删除
      */
-    public static final String DIR_WORK = "work";
-    /**
-     * 数据
-     */
-    public static final String DIR_DATA = "data";
+    public static final String DIR_WORK = "data/work";
+
+    public static final String DIR_ETC = "etc";
 
     private static File traderHome = null;
 
     private static ExchangeableData data;
+
+    public static JsonObject toJson() {
+        JsonObject json = new JsonObject();
+        RuntimeMXBean rtBean = ManagementFactory.getRuntimeMXBean();
+        String hostName = SystemUtil.getHostName();
+        String exportAddr = ConfigUtil.getString("/BasisService/web.exportAddr");
+        if ( StringUtil.isEmpty(exportAddr)) {
+            exportAddr = hostName;
+        }
+        json.addProperty("hostName", hostName);
+        json.addProperty("exportAddr", exportAddr);
+        json.addProperty("httpPort", ConfigUtil.getInt("/BasisService/web.httpPort", 10080));
+        json.addProperty("traderHome", System.getProperty(PROP_TRADER_HOME));
+        json.addProperty("configName", System.getProperty(PROP_TRADER_CONFIG_NAME));
+        json.addProperty("configFile", System.getProperty(PROP_TRADER_CONFIG_FILE));
+        json.addProperty("startTime", rtBean.getStartTime());
+        return json;
+    }
 
     public static File getTraderHome(){
         return traderHome;
@@ -61,18 +101,29 @@ public class TraderHomeUtil {
 
     public static File getDirectory(String purpose) {
         switch(purpose) {
-        case DIR_REPOSITORY:
-            return new File(getTraderHome(), "repository");
-        case DIR_TRASH:
-            return new File(getTraderHome(), "trash");
-        case DIR_MARKETDATA:
-            return new File(getTraderHome(), "marketData");
+        case DIR_ETC:
+            String etcDir = System.getProperty(PROP_TRADER_ETC_DIR);
+            if (!StringUtil.isEmpty(etcDir)) {
+                return new File(etcDir);
+            }
+            return new File(getTraderHome(), "etc");
         case DIR_PLUGIN:
             return new File(getTraderHome(), "plugin");
+        case DIR_REPOSITORY:
+            String repositoryDir = System.getProperty(PROP_REPOSITORY_DIR);
+            if ( !StringUtil.isEmpty(repositoryDir)) {
+                return new File(repositoryDir);
+            }
+            return new File(getTraderHome(), "data/repository");
+        case DIR_TRASH:
+            return new File(getTraderHome(), "data/trash");
+        case DIR_MARKETDATA:
+            return new File(getTraderHome(), "data/marketData");
         case DIR_WORK:
-            return new File(getTraderHome(), "work");
-        case DIR_DATA:
-            return new File(getTraderHome(), "data");
+            String traderConfigName = System.getProperty(PROP_TRADER_CONFIG_NAME);
+            File result = new File(getTraderHome(), "data/work/"+traderConfigName);
+            result.mkdirs();
+            return result;
         }
         return null;
     }
@@ -94,9 +145,13 @@ public class TraderHomeUtil {
                 traderHome = new File(envTraderHome);
             }
         }
+        //检查$HOME/PersonalData/traderHome
+        String osName = System.getProperty("os.name").toLowerCase();
+        if ( null==traderHome ) {
+
+        }
         //从userHome自动创建
         if ( null==traderHome ){
-            String osName = System.getProperty("os.name").toLowerCase();
             if( osName.indexOf("windows")>=0 ){
             	String[] paths = {"C:\\traderHome", "D:\\traderHome", "Z:\\traderHome"};
             	for(String path:paths){
@@ -111,15 +166,76 @@ public class TraderHomeUtil {
             	}
             }else{
                 String home = System.getProperty("user.home");
-                traderHome = new File(home,"traderHome");
+                if ( traderHome==null ) {
+                    traderHome = new File(home,"traderHome");
+                }
             }
         }
         if ( null==propTraderHome ) {
             propTraderHome = traderHome.getAbsolutePath();
             System.setProperty(PROP_TRADER_HOME, propTraderHome);
         }
+        if ( StringUtil.isEmpty(System.getProperty(PROP_TRADER_ETC_DIR)) ) {
+            System.setProperty(PROP_TRADER_ETC_DIR, getDirectory(DIR_ETC).getAbsolutePath());
+        }
+        if ( StringUtil.isEmpty(System.getProperty(PROP_REPOSITORY_DIR)) ) {
+            System.setProperty(PROP_REPOSITORY_DIR, getDirectory(DIR_REPOSITORY).getAbsolutePath());
+        }
+        System.setProperty("jtrader.platform", PlatformUtil.getPlatform().name());
         File traderLogs = new File(traderHome, "logs");
         traderLogs.mkdirs();
+
+        String traderConfigFile = System.getProperty(PROP_TRADER_CONFIG_FILE);
+        String traderConfigName = null;
+        if ( StringUtil.isEmpty(traderConfigFile)) {
+            String defaultTraderConfigName =  System.getProperty(PROP_DEFAULT_TRADER_CONFIG_NAME, "trader");
+            traderConfigFile = new File(getDirectory(DIR_ETC), defaultTraderConfigName+".xml").getAbsolutePath();
+            System.setProperty(PROP_TRADER_CONFIG_FILE, traderConfigFile);
+        }
+        traderConfigName = FileUtil.getFileMainName(new File(traderConfigFile));
+        System.setProperty(TraderHomeUtil.PROP_TRADER_CONFIG_NAME, traderConfigName);
+
+        //trader.tradingDay
+        if ( StringUtil.isEmpty(System.getProperty(PROP_TRADER_TRADINGDAY)) ) {
+            ExchangeableTradingTimes tradingTimes = Exchange.SHFE.detectTradingTimes("au", LocalDateTime.now());
+            if ( tradingTimes!=null) {
+                LocalDate tradingDay = tradingTimes.getTradingDay();
+                System.setProperty(PROP_TRADER_TRADINGDAY, DateUtil.date2str(tradingDay));
+            }
+        }
+    }
+
+    /**
+     * 探测H2行情数据库的连接URL
+     */
+    public static String detectRepositoryURL() {
+        String addr = ConfigUtil.getString0("/BasisService/h2db.addr", "127.0.0.1");
+        int tcpPort = ConfigUtil.getInt("/BasisService/h2db.tcpPort", 9092);
+        boolean autoServer = ConfigUtil.getBoolean("/BasisService/h2db.autoServer", true);
+        String url = "jdbc:h2:tcp://"+addr+":"+tcpPort+"/repository;IFEXISTS=FALSE";
+        String usr = "sa";
+        String pwd = "";
+        try {
+            Class.forName("org.h2.Driver");
+            Connection conn = DriverManager.getConnection(url, usr, pwd);
+            conn.close();
+        }catch(Throwable t) {
+            url = null;
+            if ( autoServer ) {
+                File h2db = new File( TraderHomeUtil.getTraderHome(), "data/h2db");
+                url = "jdbc:h2:"+h2db.getAbsolutePath()+"/repository;IFEXISTS=FALSE;AUTO_SERVER=TRUE;AUTO_SERVER_PORT="+tcpPort;
+            }
+        }
+        return url;
+    }
+
+    public static Connection getRepositoryConnection() throws SQLException
+    {
+        String url = detectRepositoryURL();
+        String usr = "sa";
+        String pwd = "";
+        Connection conn = DriverManager.getConnection(url, usr, pwd);
+        return conn;
     }
 
 }

@@ -7,11 +7,15 @@ import org.slf4j.LoggerFactory;
 
 import trader.common.beans.BeansContainer;
 import trader.common.beans.Lifecycle;
+import trader.common.exchangeable.Exchangeable;
 import trader.service.ServiceConstants.AccountState;
 import trader.service.md.MarketData;
 import trader.service.ta.LeveledTimeSeries;
+import trader.service.ta.TechnicalAnalysisListener;
+import trader.service.ta.TechnicalAnalysisService;
 import trader.service.trade.Account;
 import trader.service.trade.AccountListener;
+import trader.service.trade.MarketTimeService;
 import trader.service.trade.Order;
 import trader.service.trade.OrderStateTuple;
 import trader.service.trade.Transaction;
@@ -24,6 +28,7 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
 
     protected TradletService tradletService;
     protected BeansContainer beansContainer;
+    protected MarketTimeService mtService;
     protected TradletGroupImpl group;
     protected long lastEventTime;
 
@@ -39,10 +44,21 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
     public void init(BeansContainer beansContainer) {
         this.beansContainer = beansContainer;
         this.tradletService = beansContainer.getBean(TradletServiceImpl.class);
-
+        mtService = beansContainer.getBean(MarketTimeService.class);
+        group.initTradlets();
+        group.getUpdatedInstruments();
         //关联TradletGroup到Account
         group.setState(TradletGroupState.Enabled);
-        group.getAccount().addAccountListener(this);
+        if (group.getAccount()!=null) {
+            group.getAccount().addAccountListener(this);
+        }
+        TechnicalAnalysisService taService = beansContainer.getBean(TechnicalAnalysisService.class);
+        taService.registerListener(group.getInstruments(), new TechnicalAnalysisListener() {
+            @Override
+            public void onNewBar(Exchangeable e, LeveledTimeSeries series) {
+                queueEvent(TradletEvent.EVENT_TYPE_MD_BAR, series);
+            }
+        });
     }
 
     //--------- AccountListener--------
@@ -80,7 +96,7 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
     public abstract void queueEvent(int eventType, Object data);
 
     protected void processEvent(int eventType, Object data) throws Exception {
-        lastEventTime = System.currentTimeMillis();
+        lastEventTime = mtService.currentTimeMillis();
         if ( logger.isDebugEnabled() ) {
             logger.debug("Tradlet group "+group.getId()+" process event: "+ String.format("%08X", eventType)+" data "+data);
         }
@@ -91,8 +107,8 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
         case TradletEvent.EVENT_TYPE_MD_BAR:
             processBar((LeveledTimeSeries)data);
             break;
-        case TradletEvent.EVENT_TYPE_MISC_GROUP_UPDATE:
-            processUpdateGroup((TradletGroupTemplate)data);
+        case TradletEvent.EVENT_TYPE_MISC_GROUP_RELOAD:
+            processReloadGroup((TradletGroupTemplate)data);
             break;
         case TradletEvent.EVENT_TYPE_TRADE_ORDER:
             processOrder((Order)data);
@@ -108,19 +124,20 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
         }
     }
 
-    protected void processTick(MarketData md) {
+    protected void processTick(MarketData tick) {
         List<TradletHolder> tradletHolders = group.getTradletHolders();
 
         for(int i=0;i<tradletHolders.size();i++) {
             TradletHolder holder = tradletHolders.get(i);
             try{
-                holder.getTradlet().onTick(md);
+                holder.getTradlet().onTick(tick);
             }catch(Throwable t) {
                 if ( holder.setThrowable(t) ) {
                     logger.error("策略组 "+group.getId()+" 运行策略 "+holder.getId()+" 失败: "+t.toString(), t);
                 }
             }
         }
+        group.updateOnTick(tick);
     }
 
     protected void processBar(LeveledTimeSeries series) {
@@ -171,9 +188,19 @@ public abstract class AbsTradletGroupEngine implements TradletConstants, Lifecyc
     /**
      * 更新TradletGroup配置
      */
-    private void processUpdateGroup(TradletGroupTemplate template) {
+    private void processReloadGroup(TradletGroupTemplate template) {
         try{
-            group.update(template);
+            group.reload(template);
+            List<Exchangeable> updatedInstruments = group.getUpdatedInstruments();
+            if ( !updatedInstruments.isEmpty()) {
+                TechnicalAnalysisService taService = beansContainer.getBean(TechnicalAnalysisService.class);
+                taService.registerListener(updatedInstruments, new TechnicalAnalysisListener() {
+                    @Override
+                    public void onNewBar(Exchangeable e, LeveledTimeSeries series) {
+                        queueEvent(TradletEvent.EVENT_TYPE_MD_BAR, series);
+                    }
+                });
+            }
         }catch(Throwable t) {
             logger.error("策略组 "+group.getId()+" 更新配置失败: "+t.toString(), t);
         }

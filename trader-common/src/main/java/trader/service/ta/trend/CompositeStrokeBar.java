@@ -5,8 +5,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import trader.common.exchangeable.Exchangeable;
 import trader.common.util.DateUtil;
+import trader.service.md.MarketData;
+import trader.service.ta.LongNum;
 
 /**
  * 复合笔划, 处理同向笔划的包含关系
@@ -16,7 +17,8 @@ public class CompositeStrokeBar<T> extends WaveBar<T> {
 
     protected List<WaveBar<T>> bars;
 
-    public CompositeStrokeBar(WaveBar<T> stroke1, WaveBar<T> stroke2) {
+    public CompositeStrokeBar(int index, WaveBar<T> stroke1, WaveBar<T> stroke2) {
+        super(index, stroke2.tradingTimes);
         bars = new ArrayList<>(2);
         bars.add(stroke1);
         bars.add(stroke2);
@@ -28,13 +30,46 @@ public class CompositeStrokeBar<T> extends WaveBar<T> {
     }
 
     @Override
-    public WaveType getWaveType() {
-        return WaveType.Stroke;
+    public List<WaveBar> getBars() {
+        return Collections.unmodifiableList(bars);
     }
 
     @Override
-    public List<WaveBar> getBars() {
-        return Collections.unmodifiableList(bars);
+    public int getBarCount() {
+        return bars.size();
+    }
+
+    @Override
+    public MarketData getOpenTick() {
+        return bars.get(0).getOpenTick();
+    }
+
+    @Override
+    public MarketData getCloseTick() {
+        return bars.get(bars.size()-1).getCloseTick();
+    }
+
+    @Override
+    public MarketData getMaxTick() {
+        return null;
+    }
+
+    @Override
+    public MarketData getMinTick() {
+        return null;
+    }
+
+    @Override
+    public Duration getTimePeriod() {
+        Duration result = null;
+        for(WaveBar bar:bars) {
+            if ( result==null) {
+                result = bar.getTimePeriod();
+            }else {
+                result = result.plus(bar.getTimePeriod());
+            }
+        }
+        return result;
     }
 
     @Override
@@ -58,12 +93,16 @@ public class CompositeStrokeBar<T> extends WaveBar<T> {
         this.volume = stroke1.getVolume().plus(stroke2.getVolume());
         this.amount = stroke1.getAmount().plus(stroke2.getAmount());
 
-        return null;
-    }
+        long vol = this.volume.longValue();
+        if ( vol==0 ) {
+            avgPrice = stroke2.getAvgPrice();
+        }else {
+            avgPrice = LongNum.valueOf( amount.doubleValue()/(vol*tradingTimes.getInstrument().getVolumeMutiplier()) );
+        }
+        openInterest = stroke2.getOpenInterest();
+        mktAvgPrice = stroke2.getMktAvgPrice();
 
-    @Override
-    public Exchangeable getExchangeable() {
-        return bars.get(0).getExchangeable();
+        return null;
     }
 
     @Override
@@ -79,7 +118,7 @@ public class CompositeStrokeBar<T> extends WaveBar<T> {
     @Override
     public String toString() {
         Duration dur= DateUtil.between(begin.toLocalDateTime(), end.toLocalDateTime());
-        return "CStroke[ "+direction+", B "+DateUtil.date2str(begin.toLocalDateTime())+", "+dur.toSeconds()+"S, O "+open+" C "+close+" H "+max+" L "+min+" ]";
+        return "CStroke[ "+direction+", B "+DateUtil.date2str(begin.toLocalDateTime())+", "+dur.getSeconds()+"S, O "+open+" C "+close+" H "+max+" L "+min+" ]";
     }
 
 }

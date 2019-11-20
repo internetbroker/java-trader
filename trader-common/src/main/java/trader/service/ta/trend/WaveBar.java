@@ -2,42 +2,28 @@ package trader.service.ta.trend;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
 
-import org.ta4j.core.Bar;
 import org.ta4j.core.num.Num;
 
-import trader.common.exchangeable.Exchangeable;
-import trader.common.exchangeable.TradingMarketInfo;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import trader.common.exchangeable.ExchangeableTradingTimes;
+import trader.common.util.DateUtil;
+import trader.common.util.JsonEnabled;
+import trader.service.ta.Bar2;
 import trader.service.trade.TradeConstants.PosDirection;
 
 /**
  * 抽象的缠轮/波浪运动的基本构件: 笔划-线段-中枢和趋势
  */
-public abstract class WaveBar<T> implements Bar {
+public abstract class WaveBar<T> implements Bar2, JsonEnabled {
     private static final long serialVersionUID = -8268409694130012911L;
 
-    /**
-     * 波浪级别
-     */
-    public static enum WaveType{
-        /**
-         * 笔划
-         */
-        Stroke
-        /**
-         * 线段
-         */
-        ,Section
-        /**
-         * 中枢
-         */
-        ,Centrum
-    }
-
-    protected WaveType waveType;
+    protected int index;
+    protected ExchangeableTradingTimes tradingTimes;
     protected PosDirection direction;
     protected Num open;
     protected Num close;
@@ -47,6 +33,22 @@ public abstract class WaveBar<T> implements Bar {
     protected Num amount;
     protected ZonedDateTime begin;
     protected ZonedDateTime end;
+    protected Num avgPrice;
+    protected long openInterest;
+    protected Num mktAvgPrice;
+
+    WaveBar(int index, ExchangeableTradingTimes tradingTimes){
+        this.index = index;
+        this.tradingTimes = tradingTimes;
+    }
+
+    public ExchangeableTradingTimes getTradingTimes() {
+        return tradingTimes;
+    }
+
+    public int getIndex() {
+        return index;
+    }
 
     @Override
     public Num getOpenPrice() {
@@ -69,6 +71,16 @@ public abstract class WaveBar<T> implements Bar {
     }
 
     @Override
+    public long getOpenInterest() {
+        return openInterest;
+    }
+
+    @Override
+    public Num getMktAvgPrice() {
+        return mktAvgPrice;
+    }
+
+    @Override
     public Num getVolume() {
         return volume;
     }
@@ -84,22 +96,7 @@ public abstract class WaveBar<T> implements Bar {
     }
 
     @Override
-    public Duration getTimePeriod() {
-        Exchangeable e = getExchangeable();
-        TradingMarketInfo beginInfo = e.detectTradingMarketInfo(begin.toLocalDateTime());
-        TradingMarketInfo endInfo = e.detectTradingMarketInfo(end.toLocalDateTime());
-        if ( beginInfo==null || endInfo==null ) {
-            return Duration.between(begin.toInstant(), end.toInstant());
-        }
-        int beginTradingTime = beginInfo.getTradingTime();
-        int endTradingTime = endInfo.getTradingTime();
-        if ( beginInfo.getMarket()==endInfo.getMarket() ) {
-            assert(endTradingTime>beginTradingTime);
-            return Duration.of(endTradingTime-beginTradingTime, ChronoUnit.MILLIS);
-        } else {
-            return Duration.of(endTradingTime+(beginInfo.getTradingMillis()-beginTradingTime), ChronoUnit.MILLIS);
-        }
-    }
+    public abstract Duration getTimePeriod();
 
     @Override
     public ZonedDateTime getBeginTime() {
@@ -136,12 +133,9 @@ public abstract class WaveBar<T> implements Bar {
         return Collections.emptyList();
     }
 
-    public abstract Exchangeable getExchangeable();
-
-    /**
-     * 构件类型
-     */
-    public abstract WaveType getWaveType();
+    public int getBarCount() {
+        return getBars().size();
+    }
 
     /**
      * 更新底层数据
@@ -159,6 +153,31 @@ public abstract class WaveBar<T> implements Bar {
      * 合并
      */
     public abstract void merge(WaveBar bar);
+
+    @Override
+    public Num getAvgPrice() {
+        return avgPrice;
+    }
+
+    @Override
+    public JsonElement toJson() {
+        JsonObject json = new JsonObject();
+        json.addProperty("index", index);
+        json.addProperty("direction", getDirection().name());
+        json.addProperty("open", getOpenPrice().toString());
+        json.addProperty("close", getClosePrice().toString());
+        json.addProperty("max", getMaxPrice().toString());
+        json.addProperty("min", getMinPrice().toString());
+        json.addProperty("avgPrice", getAvgPrice().toString());
+        json.addProperty("volume", getVolume().toString());
+        json.addProperty("turnover", getAmount().toString());
+        json.addProperty("beginTime", DateUtil.date2str( getBeginTime().toLocalDateTime()));
+        json.addProperty("endTime", DateUtil.date2str( getEndTime().toLocalDateTime()));
+        json.addProperty("duration", getTimePeriod().getSeconds());
+        json.addProperty("mktAvgPrice", getMktAvgPrice().doubleValue());
+        json.addProperty("openInt", getOpenInterest());
+        return json;
+    }
 
     /**
      * 笔1包含笔2

@@ -10,9 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ta4j.core.num.Num;
 
-import trader.common.exchangeable.Exchangeable;
 import trader.common.util.CollectionUtil;
 import trader.common.util.DateUtil;
+import trader.service.md.MarketData;
 import trader.service.ta.LongNum;
 import trader.service.trade.TradeConstants.PosDirection;
 
@@ -27,11 +27,14 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
     protected boolean canMerge;
     protected List<WaveBar> bars;
     protected LinkedList<WaveBar> charBars;
+    protected SimpleSectionBar mergedTo;
 
-    public SimpleSectionBar(List<WaveBar> strokeBars) {
+    public SimpleSectionBar(int index, List<WaveBar> strokeBars) {
+        super(index, strokeBars.get(strokeBars.size()-1).getTradingTimes());
         WaveBar stroke1 = strokeBars.get(0);
         WaveBar strokeN = strokeBars.get(strokeBars.size()-1);
         assert(stroke1.getDirection()==strokeN.getDirection());
+        this.tradingTimes = strokeN.getTradingTimes();
         bars = new ArrayList<>(strokeBars);
         charBars = new LinkedList<>();
         direction = stroke1.getDirection();
@@ -43,13 +46,33 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
     }
 
     @Override
-    public WaveType getWaveType() {
-        return WaveType.Section;
+    public List<WaveBar> getBars() {
+        return Collections.unmodifiableList(bars);
     }
 
     @Override
-    public List<WaveBar> getBars() {
-        return Collections.unmodifiableList(bars);
+    public int getBarCount() {
+        return bars.size();
+    }
+
+    @Override
+    public MarketData getOpenTick() {
+        return bars.get(0).getOpenTick();
+    }
+
+    @Override
+    public MarketData getCloseTick() {
+        return bars.get(bars.size()-1).getCloseTick();
+    }
+
+    @Override
+    public MarketData getMaxTick() {
+        return null;
+    }
+
+    @Override
+    public MarketData getMinTick() {
+        return null;
     }
 
     /**
@@ -95,13 +118,21 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
     }
 
     @Override
-    public Exchangeable getExchangeable() {
-        return bars.get(0).getExchangeable();
+    public boolean canMerge() {
+        return canMerge;
     }
 
     @Override
-    public boolean canMerge() {
-        return canMerge;
+    public Duration getTimePeriod() {
+        Duration result = null;
+        for(WaveBar bar:bars) {
+            if ( result==null) {
+                result = bar.getTimePeriod();
+            }else {
+                result = result.plus(bar.getTimePeriod());
+            }
+        }
+        return result;
     }
 
     @Override
@@ -114,6 +145,25 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
             lastStroke = stroke0;
         }
         recompute();
+        if ( sectionToMerge instanceof SimpleSectionBar ) {
+            ((SimpleSectionBar)sectionToMerge).setMergedTo(this);
+        }
+    }
+
+    public SimpleSectionBar getMergedTo() {
+        return mergedTo;
+    }
+
+    public void setMergedTo(SimpleSectionBar mergedTo) {
+        this.mergedTo = mergedTo;
+        bars.clear();
+        open = LongNum.ZERO;
+        close = LongNum.ZERO;
+        max = LongNum.ZERO;
+        min = LongNum.ZERO;
+        volume = LongNum.ZERO;
+        amount = LongNum.ZERO;
+        direction = PosDirection.Net;
     }
 
     /**
@@ -142,9 +192,17 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
             }
             volume = stroke.getVolume().plus(volume);
             amount = stroke.getAmount().plus(amount);
+            this.mktAvgPrice = stroke.getMktAvgPrice();
+            this.openInterest = stroke.getOpenInterest();
         }
         this.volume = volume;
         this.amount = amount;
+        long vol = volume.longValue();
+        if ( vol==0 ) {
+            avgPrice = getMktAvgPrice();
+        }else {
+            avgPrice = LongNum.valueOf( amount.doubleValue()/(vol*tradingTimes.getInstrument().getVolumeMutiplier()) );
+        }
     }
 
     /**
@@ -165,7 +223,7 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
             if ( WaveBar.barContains(stroke2, toCanonical) || WaveBar.barContains(toCanonical, stroke2) ){
                 charBars.removeLast();
                 charBars.removeLast();
-                charBars.add(new CompositeStrokeBar(stroke2, toCanonical));
+                charBars.add(new CompositeStrokeBar(0, stroke2, toCanonical));
             }
         }
         charBars.add(charStroke);
@@ -260,9 +318,9 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
             assert(strokeN.getDirection()==PosDirection.Short);
             assert(strokeN_1.getDirection()==PosDirection.Short);
             assert(strokeN_2.getDirection()==PosDirection.Short);
-            assert(strokeN.getOpenPrice().isGreaterThan(strokeN.getClosePrice()) );
-            assert(strokeN_1.getOpenPrice().isGreaterThan(strokeN_1.getClosePrice()));
-            assert(strokeN_2.getOpenPrice().isGreaterThan(strokeN_2.getClosePrice()));
+            assert(strokeN.getOpenPrice().isGreaterThanOrEqual(strokeN.getClosePrice()) );
+            assert(strokeN_1.getOpenPrice().isGreaterThanOrEqual(strokeN_1.getClosePrice()));
+            assert(strokeN_2.getOpenPrice().isGreaterThanOrEqual(strokeN_2.getClosePrice()));
             //继续向上
 
             //正常: 形成顶底分型, 且第一第二笔划之间有重叠
@@ -284,9 +342,9 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
             assert(strokeN.getDirection()==PosDirection.Long);
             assert(strokeN_1.getDirection()==PosDirection.Long);
             assert(strokeN_2.getDirection()==PosDirection.Long);
-            assert(strokeN.getOpenPrice().isLessThan(strokeN.getClosePrice()));
-            assert(strokeN_1.getOpenPrice().isLessThan(strokeN_1.getClosePrice()));
-            assert(strokeN_2.getOpenPrice().isLessThan(strokeN_2.getClosePrice()));
+            assert(strokeN.getOpenPrice().isLessThanOrEqual(strokeN.getClosePrice()));
+            assert(strokeN_1.getOpenPrice().isLessThanOrEqual(strokeN_1.getClosePrice()));
+            assert(strokeN_2.getOpenPrice().isLessThanOrEqual(strokeN_2.getClosePrice()));
             //继续向下
             if ( strokeN.end.compareTo(strokeN_1.end)<0 ) {
                 return null;
@@ -331,7 +389,8 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
         end = lastStroke.end;
         recompute();
         assert(newStrokes.size()>0);
-        return new SimpleSectionBar(newStrokes);
+        SimpleSectionBar result = new SimpleSectionBar(index+1, newStrokes);
+        return result;
     }
 
     /**
@@ -365,7 +424,7 @@ public class SimpleSectionBar extends WaveBar<WaveBar> {
     @Override
     public String toString() {
         Duration dur= this.getTimePeriod();
-        return "Section[ "+direction+", B "+DateUtil.date2str(begin.toLocalDateTime())+", "+dur.toSeconds()+"S, O "+open+" C "+close+" H "+max+" L "+min+" ]";
+        return "Section[ "+direction+", B "+DateUtil.date2str(begin.toLocalDateTime())+", "+dur.getSeconds()+"S, O "+open+" C "+close+" H "+open.minus(close).abs()+" "+bars.size()+" bars]";
     }
 
 }

@@ -1,6 +1,7 @@
 package trader.service.trade;
 
 import java.util.Collection;
+import java.util.List;
 
 import trader.common.exception.AppException;
 import trader.common.exchangeable.Exchangeable;
@@ -11,7 +12,7 @@ import trader.service.data.KVStore;
 /**
  * 交易账户(真实账户或视图)
  */
-public interface Account extends JsonEnabled {
+public interface Account extends JsonEnabled, TradeConstants {
 
     /**
      * 唯一ID
@@ -19,9 +20,14 @@ public interface Account extends JsonEnabled {
     public String getId();
 
     /**
+     * 账户分类: 期货/股票/融资融券
+     */
+    public AccClassification getClassification();
+
+    /**
      * logger包, 每个账户使用独立日志文件
      */
-    public String getLoggerPackage();
+    public String getLoggerCategory();
 
     /**
      * 账户状态
@@ -34,22 +40,8 @@ public interface Account extends JsonEnabled {
     public KVStore getStore();
 
     /**
-     * @see TradeConstants#AccMoney_Balance
-     * @see TradeConstants#AccMoney_Available
-     * @see TradeConstants#AccMoney_FrozenMargin
-     * @see TradeConstants#AccMoney_CurrMargin
-     * @see TradeConstants#AccMoney_PreMargin
-     * @see TradeConstants#AccMoney_FrozenCash
-     * @see TradeConstants#AccMoney_Commission
-     * @see TradeConstants#AccMoney_FrozenCommission
-     * @see TradeConstants#AccMoney_CloseProfit
-     * @see TradeConstants#AccMoney_PositionProfit
-     * @see TradeConstants#AccMoney_WithdrawQuota
-     * @see TradeConstants#AccMoney_Reserve
-     * @see TradeConstants#AccMoney_Deposit
-     * @see TradeConstants#AccMoney_Withdraw
      */
-    public long getMoney(int moneyIndex);
+    public long getMoney(AccMoney mny);
 
     /**
      * 账户相关的手续费/保证金率计算接口
@@ -62,24 +54,24 @@ public interface Account extends JsonEnabled {
     public TxnSession getSession();
 
     /**
-     * 所有持仓
+     * 所有持仓, 无序
      */
     public Collection<? extends Position> getPositions();
 
     /**
      * 返回合约的当日撤单数
      */
-    public int getCancelCount(Exchangeable e);
+    public int getCancelCount(Exchangeable instrument);
 
     /**
      * 指定品种持仓
      */
-    public Position getPosition(Exchangeable e);
+    public Position getPosition(Exchangeable instrument);
 
     /**
-     * 根据账户视图过滤当日的报单, null代表不过滤
+     * 返回当日的报单, 按照报单顺序返回
      */
-    public Collection<? extends Order> getOrders();
+    public List<Order> getOrders();
 
     /**
      * 根据OrderRef返回报单

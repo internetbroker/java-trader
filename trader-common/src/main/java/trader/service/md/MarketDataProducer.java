@@ -12,7 +12,26 @@ import trader.service.ServiceConstants.ConnState;
  */
 public interface MarketDataProducer<T> extends JsonEnabled {
 
+    /**
+     * SFIT CTP
+     */
     public static final String PROVIDER_CTP = "ctp";
+    /**
+     * 飞马
+     */
+    public static final String PROVIDER_FEMAS = "femas";
+    /**
+     * 易盛
+     */
+    public static final String PROVIDER_TAP = "tap";
+    /**
+     * TDX
+     */
+    public static final String PROVIDER_TDX = "tdx";
+    /**
+     * WEB: sina
+     */
+    public static final String PROVIDER_WEB = "web";
 
     /**
      * 唯一ID
@@ -46,6 +65,8 @@ public interface MarketDataProducer<T> extends JsonEnabled {
 
     /**
      * 从原始行情事件对象创建MarketData对象
+     *
+     * @return MarketData 或 null
      */
-    public MarketData createMarketData(T rawMarketData, LocalDate actionDay);
+    public MarketData createMarketData(T rawMarketData, LocalDate tradingDay);
 }

@@ -118,7 +118,7 @@ public class DateUtil {
      * LocalDateTime to EpochMillis with default ZoneId
      */
     public static long localdatetime2long(LocalDateTime ldt) {
-        return instant2long(ZonedDateTime.of(ldt, defaultZoneId).toInstant());
+        return ZonedDateTime.of(ldt, defaultZoneId).toInstant().toEpochMilli();
     }
 
     /**
@@ -128,19 +128,7 @@ public class DateUtil {
         if (ldt == null) {
             return 0;
         }
-        return instant2long(ZonedDateTime.of(ldt, zoneId).toInstant());
-    }
-
-    /**
-     * Instant to EpochMillis
-     */
-    public static long instant2long(Instant instant) {
-        if (instant == null) {
-            return 0;
-        }
-        long epochSeconds = instant.getEpochSecond();
-        long nanoSeconds = instant.getNano();
-        return epochSeconds * 1000 + (nanoSeconds / 1000000);
+        return ZonedDateTime.of(ldt, zoneId).toInstant().toEpochMilli();
     }
 
     public static Duration between(LocalDateTime datetime1, LocalDateTime datetime2) {
@@ -160,10 +148,15 @@ public class DateUtil {
 
     private static final DateTimeFormatter[] dateFormaters = new DateTimeFormatter[] { DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSS]", Locale.ENGLISH),
             DateTimeFormatter.ISO_DATE_TIME, DateTimeFormatter.ISO_LOCAL_DATE_TIME, DateTimeFormatter.ISO_INSTANT,
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH), DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm:ss X", Locale.ENGLISH) };
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH), DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm:ss X", Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss[.SSS]", Locale.ENGLISH)};
 
-    private static final DateTimeFormatter[] timeFormaters = new DateTimeFormatter[] { DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.ENGLISH),
-            DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ENGLISH), DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH) };
+    private static final DateTimeFormatter[] timeFormaters = new DateTimeFormatter[] {
+            DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("HHmmss", Locale.ENGLISH)
+            };
 
     public static LocalDateTime str2localdatetime(String str) {
         if (StringUtil.isEmpty(str)) {
@@ -198,7 +191,7 @@ public class DateUtil {
         if (timeHHCMMCSS.length() == 7) {
             timeHHCMMCSS = "0" + timeHHCMMCSS;
         }
-        LocalTime localTime = LocalTime.parse(timeHHCMMCSS);
+        LocalTime localTime = str2localtime(timeHHCMMCSS);
         return localDate.atTime(localTime.getHour(), localTime.getMinute(), localTime.getSecond(), millisec * 1000000);
     }
 
@@ -206,18 +199,24 @@ public class DateUtil {
      * 转换09:00:00格式为: 90000, 转换12:00:00格式为12,00,00
      */
     public static int time2int(String timeHHCMMCSS) {
-        if (timeHHCMMCSS.length() == 7) {
-            timeHHCMMCSS = "0" + timeHHCMMCSS;
+        int result = 0;
+        if ( timeHHCMMCSS.length()>=7 ) {
+            if (timeHHCMMCSS.length() == 7) {
+                timeHHCMMCSS = "0" + timeHHCMMCSS;
+            }
+            int hour = Integer.parseInt(timeHHCMMCSS.substring(0, 2));
+            int min = Integer.parseInt(timeHHCMMCSS.substring(3, 5));
+            int sec = Integer.parseInt(timeHHCMMCSS.substring(6, 8));
+            result = hour*10000+min*100+sec;
+        } else {
+            //HHMMSS
+            result = ConversionUtil.toInt(timeHHCMMCSS);
         }
-        int hour = Integer.parseInt(timeHHCMMCSS.substring(0, 2));
-        int min = Integer.parseInt(timeHHCMMCSS.substring(3, 5));
-        int sec = Integer.parseInt(timeHHCMMCSS.substring(6, 8));
-
-        return hour*10000+min*100+sec;
+        return result;
     }
 
     /**
-     * 转换09:00:00格式为: 90000, 转换12:00:00格式为12,00,00
+     * 转换09:00:00格式为: 9,00,00, 转换12:00:00格式为12,00,00
      */
     public static int time2int(LocalTime time) {
         int hour = time.getHour();
@@ -254,10 +253,6 @@ public class DateUtil {
             return null;
         }
         return datetime2strFormater.format(date);
-    }
-
-    public static long date2epochMillis(ZonedDateTime zdt) {
-        return zdt.toEpochSecond()*1000 + zdt.getNano()/1000000;
     }
 
     public static LocalTime str2localtime(String str) {

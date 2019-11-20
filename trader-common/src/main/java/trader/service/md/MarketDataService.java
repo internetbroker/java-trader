@@ -6,6 +6,7 @@ import java.util.Map;
 
 import trader.common.beans.Lifecycle;
 import trader.common.beans.ServiceState;
+import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.Exchangeable;
 
 /**
@@ -22,9 +23,17 @@ public interface MarketDataService extends Lifecycle {
     public Map<String, MarketDataProducerFactory> getProducerFactories();
 
     /**
-     * 返回主力合约
+     * 返回当天的主力合约, 从网络实时查询得到
      */
-    public Collection<Exchangeable> getPrimaryContracts();
+    public Collection<Exchangeable> getPrimaryInstruments();
+
+    /**
+     * 返回期货品种对应的主力合约
+     *
+     * @param exchange 交易所, 可以为null, 此时自动从合约名称关联
+     * @param commodity 合约名称, ru代表主力合约 ru2代表次主力合约
+     */
+    public Exchangeable getPrimaryInstrument(Exchange exchange, String commodity);
 
     /**
      * 当前的行情数据源状态
@@ -44,7 +53,7 @@ public interface MarketDataService extends Lifecycle {
     /**
      * 最后行情数据
      */
-    public MarketData getLastData(Exchangeable e);
+    public MarketData getLastData(Exchangeable instrument);
 
     /**
      * 增加主动订阅品种

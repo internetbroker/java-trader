@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.junit.Test;
 
+import trader.common.exchangeable.Exchange;
 import trader.common.exchangeable.Exchangeable;
 import trader.common.exchangeable.ExchangeableType;
 import trader.common.exchangeable.Future;
@@ -33,6 +34,17 @@ public class TestFuture {
         assertTrue(result.get(1).id().equals("IF1510"));
         assertTrue(result.get(2).id().equals("IF1512"));
         assertTrue(result.get(3).id().equals("IF1603"));
+
+        result = Future.instrumentsFromMarketDay(DateUtil.str2localdate("20190531"), "m");
+        assertTrue(result.size()==8);
+        assertTrue(result.get(0).id().equals("m1907"));
+        assertTrue(result.get(1).id().equals("m1908"));
+        assertTrue(result.get(2).id().equals("m1909"));
+        assertTrue(result.get(3).id().equals("m1911"));
+        assertTrue(result.get(4).id().equals("m1912"));
+        assertTrue(result.get(5).id().equals("m2001"));
+        assertTrue(result.get(6).id().equals("m2003"));
+        assertTrue(result.get(7).id().equals("m2005"));
     }
 
     @Test
@@ -44,6 +56,9 @@ public class TestFuture {
         assertTrue(result.get(3).id().equals("c1705"));
         assertTrue(result.get(4).id().equals("c1707"));
         assertTrue(result.get(5).id().equals("c1709"));
+
+        Exchangeable e = Exchangeable.fromString("RR2001");
+        assertTrue(e.getType()==ExchangeableType.FUTURE && e.exchange()==Exchange.DCE);
     }
 
     @Test
@@ -52,13 +67,18 @@ public class TestFuture {
         assertTrue(e.getType()==ExchangeableType.FUTURE);
     }
 
+
+
     @Test
-    public void testAU() {
+    public void test_shfe() {
         Exchangeable e = Exchangeable.fromString("AU1906");
         assertTrue(e.getType()==ExchangeableType.FUTURE);
 
         Exchangeable e2 = Exchangeable.fromString("au1906");
-        assertTrue(e.getType()==ExchangeableType.FUTURE);
+        assertTrue(e2.getType()==ExchangeableType.FUTURE);
+
+        Exchangeable nr2002 = Exchangeable.fromString("nr2002");
+        assertTrue(nr2002.getType()==ExchangeableType.FUTURE);
     }
 
 }

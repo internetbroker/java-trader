@@ -16,6 +16,7 @@ import com.google.gson.JsonObject;
 import trader.common.beans.BeansContainer;
 import trader.common.exchangeable.Exchangeable;
 import trader.common.util.ConversionUtil;
+import trader.common.util.EncryptionUtil;
 import trader.common.util.JsonUtil;
 import trader.common.util.StringUtil;
 import trader.service.ServiceConstants.ConnState;
@@ -31,7 +32,7 @@ public abstract class AbsMarketDataProducer<T> implements AutoCloseable, MarketD
     protected volatile ConnState state;
     protected volatile long stateTime;
     protected Properties connectionProps;
-    protected long tickCount;
+    protected volatile long tickCount;
     protected int connectCount;
     protected List<String> subscriptions = new ArrayList<>();
 
@@ -119,7 +120,7 @@ public abstract class AbsMarketDataProducer<T> implements AutoCloseable, MarketD
     /**
      * 订阅, 需要等到连接上之后才能调用
      */
-    public abstract void subscribe(Collection<Exchangeable> exchangeables);
+    public abstract void subscribe(Collection<Exchangeable> instruments);
 
     protected void changeStatus(ConnState newStatus) {
         if ( state!=newStatus ) {
@@ -136,6 +137,14 @@ public abstract class AbsMarketDataProducer<T> implements AutoCloseable, MarketD
     protected void notifyData(MarketData md) {
         tickCount++;
         listener.onMarketData(md);
+    }
+
+    protected static String decrypt(String str) {
+        String result = str;
+        if ( EncryptionUtil.isEncryptedData(str) ) {
+            result = new String( EncryptionUtil.symmetricDecrypt(str), StringUtil.UTF8);
+        }
+        return result;
     }
 
 }

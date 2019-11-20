@@ -10,7 +10,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import trader.common.exchangeable.Exchange.MarketType;
 import trader.common.util.DateUtil;
 import trader.common.util.IOUtil;
 
@@ -56,41 +55,6 @@ public class MarketDayUtil {
         }catch(Throwable ioe){
             throw new RuntimeException(ioe);
         }
-    }
-
-    /**
-     * 判断交易日
-     */
-    public static LocalDate getTradingDay(Exchange exchange, LocalDateTime marketTime) {
-        if ( exchange==null ) {
-            exchange = Exchange.SSE;
-        }
-        int hhmmss = DateUtil.time2int(marketTime.toLocalTime());
-        //是交易日
-        LocalDate today = marketTime.toLocalDate();
-        if ( isMarketDay(exchange, today)) {
-            if ( hhmmss<=23000) {
-                //00:00:00-02:30:00
-                LocalDate prevWorkingDay = nextWorkingDay(today, false);
-                if( isMarketDay(exchange, prevWorkingDay)  ){
-                    return prevWorkingDay;
-                }
-            }else if ( hhmmss>=160000) {
-                LocalDate nextWorkingDay = nextWorkingDay(today, true);
-                if( isMarketDay(exchange, nextWorkingDay)  ){
-                    return nextWorkingDay;
-                }
-            }else {
-                // 08:00:00-16:00:00
-                return today;
-            }
-        } else {
-            if ( hhmmss<=23000) {
-                //00:00:00-02:30:00
-                return nextMarketDay(exchange, today.plusDays(-1) );
-            }
-        }
-        return null;
     }
 
     private static LocalDate nextWorkingDay(LocalDate tradingDay, boolean nextOrPrev) {
@@ -149,7 +113,40 @@ public class MarketDayUtil {
         return null;
     }
 
+    /**
+     * 上N个交易日
+     *
+     * @param count >0 后面的交易日, <0 前交易日 ==0 不变
+     */
+    public static LocalDate nextMarketDays(Exchange exchange, LocalDate tradingDay, int count) {
+        LocalDate result = tradingDay;
+        if ( count==0 ) {
+            return tradingDay;
+        }else if ( count>0 ) {
+            for(int i=0;i<count;i++) {
+                result = nextMarketDay(exchange, tradingDay);
+            }
+        }else if ( count<0 ) {
+            count = Math.abs(count);
+            for(int i=0;i<count;i++) {
+                result = prevMarketDay(exchange, tradingDay, false);
+            }
+
+        }
+        return result;
+    }
+
+    /**
+     * 上一个交易日
+     */
     public static LocalDate prevMarketDay(Exchange exchange, LocalDate tradingDay){
+        return prevMarketDay(exchange, tradingDay, false);
+    }
+
+    /**
+     * 上一个交易日
+     */
+    public static LocalDate prevMarketDay(Exchange exchange, LocalDate tradingDay, boolean stopOnHolidy){
         if ( exchange==null ) {
             exchange = Exchange.SSE;
         }
@@ -162,10 +159,15 @@ public class MarketDayUtil {
                 continue;
             }
             if ( closeDays!=null && closeDays.contains(tradingDay) ) {
-                continue;
+                if ( !stopOnHolidy ) {
+                    continue;
+                }
+                tradingDay = null;
+                break;
             }
-            return tradingDay;
+            break;
         }
+        return tradingDay;
     }
 
 
@@ -187,7 +189,7 @@ public class MarketDayUtil {
             //股票没有夜市
             LocalTime tradingTime = tradingDateTime.toLocalTime();
             if ( completed ) {
-                if ( tradingTime.isBefore(exchange.getDefaultOpenCloseTime(MarketType.Day)[1]) ){
+                if ( tradingTime.isBefore(exchange.getMarketTimes()[0]) ){
                     tradingDateTime = tradingDateTime.plusDays(-1);
                 }
             }
@@ -209,7 +211,7 @@ public class MarketDayUtil {
                     ||dayOfWeek==DayOfWeek.WEDNESDAY
                     ||dayOfWeek==DayOfWeek.TUESDAY)){
                 LocalTime tradingTime = tradingDateTime.toLocalTime();
-                if ( tradingTime.isBefore(exchange.getDefaultOpenCloseTime(MarketType.Day)[1]) ){
+                if ( tradingTime.isBefore(exchange.getMarketTimes()[1]) ){
                     tradingDateTime = tradingDateTime.plusDays(1);
                 }
             }
@@ -269,7 +271,7 @@ public class MarketDayUtil {
             tradingDay = LocalDate.now(exchange.getZoneId());
         }
         LocalTime thisTime = LocalTime.now(exchange.getZoneId());
-        if ( thisCompleted && thisTime.compareTo(exchange.getDefaultOpenCloseTime(MarketType.Day)[1])<=0 ){
+        if ( thisCompleted && thisTime.compareTo(exchange.getMarketTimes()[1])<=0 ){
             tradingDay = tradingDay.plusMonths(1);
         }
         if ( isMarketDay(exchange, tradingDay) ) {

@@ -2,7 +2,10 @@ package trader.common.util;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.time.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 
 public class CSVDataSet {
     private boolean afterLast = false;
@@ -126,18 +129,18 @@ public class CSVDataSet {
 
     public double getDouble(String column){
         String str = get(column);
-        if ( str==null || str.length()==0 ) {
+        if ( str==null || str.length()==0 || StringUtil.equalsIgnoreCase("N/A", str) ) {
             return Double.MAX_VALUE;
         }
-        return Double.parseDouble(str);
+        return ConversionUtil.toDouble(str);
     }
 
     public double getDouble(int columnIndex){
         String str = get(columnIndex);
-        if ( str==null || str.length()==0 ) {
+        if ( str==null || str.length()==0 || StringUtil.equalsIgnoreCase("N/A", str) ) {
             return Double.MAX_VALUE;
         }
-        return Double.parseDouble(str);
+        return ConversionUtil.toDouble(str);
     }
 
     public long getPrice(String column){
@@ -199,6 +202,9 @@ public class CSVDataSet {
         }
         long val = 0;
         if ( (val=ConversionUtil.toLong(str, true))!=0 ) {
+            if ( val>=20000101 && val<=21000101) {
+                return DateUtil.str2localdate(str);
+            }
         	return DateUtil.long2datetime(val).toLocalDate();
         }
         return DateUtil.str2localdate(str);
